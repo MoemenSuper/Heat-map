@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="fiery_orange">#FF6B35</color>
+    <color name="deep_magma">#9B2C2C</color>
+    <color name="midnight_black">#121212</color>
+    <color name="dark_charcoal">#1E1E1E</color>
+    <color name="white">#FFFFFF</color>
+    <color name="warm_gray">#B0B0B0</color>
+    <color name="electric_blue">#4A90E2</color>
+    <color name="success_green">#2ECC71</color>
+    <color name="error_red">#E74C3C</color>
+
+    <!-- Default colors referenced in themes -->
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="purple_100">#E1BEE7</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+</resources>
