@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "1939395427",
+    "firebase_url": "https://heat-map-a70d7-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "heat-map-a70d7",
+    "storage_bucket": "heat-map-a70d7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1939395427:android:94bcccdd49c1f69abb3956",
+        "android_client_info": {
+          "package_name": "com.example.heat_map_java_test_ux"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBzhfKvWZzZpzlCTxre9QPNR23IOJ7175w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
