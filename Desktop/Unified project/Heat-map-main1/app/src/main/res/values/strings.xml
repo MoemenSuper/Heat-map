@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">Heat_map_java_test_UX</string>
+    <string name="heat_map">Heat Map</string>
+    <string name="claim_territory">Claim your territory</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="confirm_password">Confirm Password</string>
+    <string name="sign_in">Sign In</string>
+    <string name="sign_up">Sign Up</string>
+    <string name="dont_have_account">Don\'t have an account? Sign up</string>
+    <string name="already_have_account">Already have an account? Login</string>
+    <string name="or_continue_with">or continue with</string>
+    <string name="every_step_claims">Every step claims territory</string>
+    <string name="logo_description">App Logo</string>
+    <string name="google_sign_in">Sign in with Google</string>
+    <string name="facebook_sign_in">Sign in with Facebook</string>
+    <string name="create_account">Create Account</string>
+    <string name="join_territory">Join the territory claim</string>
+</resources>

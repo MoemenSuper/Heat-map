@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1049237510811",
+    "project_id": "heatmap-48e81",
+    "storage_bucket": "heatmap-48e81.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1049237510811:android:c12e86a8c752627388843e",
+        "android_client_info": {
+          "package_name": "com.example.heat_map_java_test_ux"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1049237510811-2i7ej89ukj33tqp6ldpusos3ojjgg35h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.heat_map_java_test_ux",
+            "certificate_hash": "a4dabe9eaf76158b7b20839f6837931689720e76"
+          }
+        },
+        {
+          "client_id": "1049237510811-roqm1k9983tdu525j8fvg7d2n7ne34rj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQB9qX8PQs9Xn6OoO6KuqbmXJfm-rJYD4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1049237510811-roqm1k9983tdu525j8fvg7d2n7ne34rj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
