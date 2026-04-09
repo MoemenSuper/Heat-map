@@ -48,6 +48,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 import com.google.android.gms.maps.model.Polygon;
 import com.google.android.gms.maps.model.PolygonOptions;
@@ -86,6 +87,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     
     private boolean hasCenteredOnUserLocation = false;
     private boolean sessionRunning = false;
+    private boolean followUserCamera = true;
 
     private TextView chipMode;
     private TextView chipDistance;
@@ -100,6 +102,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private TrackingService trackingService;
     private boolean isBound = false;
+    private boolean sessionInvalidatedByAntiCheat = false;
+    private String antiCheatReason = null;
 
     // Firebase Listeners (for Issue 7 - Memory Leak Fix)
     private ValueEventListener usersListener;
@@ -122,7 +126,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 @Override
                 public void onCheatingDetected(String reason) {
                     runOnUiThread(() -> {
-                        Toast.makeText(MapActivity.this, "Anti-Cheat: " + reason, Toast.LENGTH_LONG).show();
+                        sessionInvalidatedByAntiCheat = true;
+                        antiCheatReason = reason;
                         stopTrackingSession();
                     });
                 }
@@ -145,6 +150,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private final Map<String, Double> myTerritoryAreas = new HashMap<>();
     private DataSnapshot lastTerritoriesSnapshot;
     private String currentUserColor = "#FF5A1F"; // Added to track user color for redraws
+    private String lastRenderedTerritoryFingerprint = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -314,6 +320,19 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         mMap.getUiSettings().setMapToolbarEnabled(false);
         mMap.setPadding(0, 170, 0, 260);
 
+        mMap.setOnCameraMoveStartedListener(reason -> {
+            if (reason == GoogleMap.OnCameraMoveStartedListener.REASON_GESTURE && sessionRunning) {
+                // fixed by Moemen: if the player starts navigating the map we stop forced recenter
+                followUserCamera = false;
+            }
+        });
+
+        mMap.setOnMyLocationButtonClickListener(() -> {
+            // fixed by Moemen: location button means go back to follow mode
+            followUserCamera = true;
+            return false;
+        });
+
         mMap.setOnPolygonClickListener(polygon -> {
             String userId = (String) polygon.getTag();
             if (userId != null) {
@@ -384,13 +403,15 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void processAndDrawTerritories(DataSnapshot dataSnapshot) {
         if (mMap == null) return;
+
+        String fingerprint = buildTerritoryFingerprint(dataSnapshot);
+        if (fingerprint.equals(lastRenderedTerritoryFingerprint)) {
+            // fixed by Moemen: if nothing changed we do not redraw so no chance of visual stacking
+            loadingOverlay.setVisibility(View.GONE);
+            return;
+        }
         
-        // Fix for Darkening Colors: Surgical Map Clearing
-        // Instead of removing individual polygons, we wipe the map clean
-        // This ensures no ghost polygons from previous sessions remain.
-        mMap.clear();
-        remotePolygons.clear();
-        claimedAreaPolygon = null;
+        clearTerritoryOverlays();
 
         // Immediately redraw active elements like the current run path
         refreshActivePathPolyline();
@@ -429,7 +450,52 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             }
         }
         
+        lastRenderedTerritoryFingerprint = fingerprint;
         loadingOverlay.setVisibility(View.GONE);
+    }
+
+    private void clearTerritoryOverlays() {
+        // fixed by Moemen: we remove map layers by handle, this is more deterministic than blanket clear
+        for (Polygon polygon : remotePolygons) {
+            polygon.remove();
+        }
+        remotePolygons.clear();
+
+        if (claimedAreaPolygon != null) {
+            claimedAreaPolygon.remove();
+            claimedAreaPolygon = null;
+        }
+    }
+
+    private String buildTerritoryFingerprint(DataSnapshot dataSnapshot) {
+        StringBuilder builder = new StringBuilder();
+
+        builder.append("colors:");
+        TreeMap<String, String> sortedColors = new TreeMap<>(userColors);
+        for (Map.Entry<String, String> entry : sortedColors.entrySet()) {
+            builder.append(entry.getKey()).append('=').append(entry.getValue()).append(';');
+        }
+
+        builder.append("|territories:");
+        for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
+            Territory territory = snapshot.getValue(Territory.class);
+            if (territory == null || territory.points == null) continue;
+
+            String key = snapshot.getKey() == null ? "no-key" : snapshot.getKey();
+            int pointCount = territory.points.size();
+            builder.append(key)
+                    .append(':')
+                    .append(territory.userId)
+                    .append(':')
+                    .append(territory.timestamp)
+                    .append(':')
+                    .append(pointCount)
+                    .append(':')
+                    .append(Math.round(territory.area))
+                    .append(';');
+        }
+
+        return builder.toString();
     }
 
     private void drawGeometry(Territory territory, Geometry geom) {
@@ -566,6 +632,9 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
 
         sessionRunning = true;
+        followUserCamera = true;
+        sessionInvalidatedByAntiCheat = false;
+        antiCheatReason = null;
         trackedPath.clear();
         totalDistanceMeters = 0f;
         lastAcceptedLocation = null;
@@ -581,6 +650,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void stopTrackingSession() {
         sessionRunning = false;
+        followUserCamera = true;
         
         Intent serviceIntent = new Intent(this, TrackingService.class);
         stopService(serviceIntent);
@@ -589,6 +659,21 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         chipMode.setText("Preview");
 
         if (activePathPolyline != null) activePathPolyline.setPoints(new ArrayList<>());
+
+        if (sessionInvalidatedByAntiCheat) {
+            // fixed by Moemen: anti-cheat cancel should never save a territory
+            trackedPath.clear();
+            totalDistanceMeters = 0f;
+            lastAcceptedLocation = null;
+            updateTrackingStats();
+
+            String reason = antiCheatReason == null ? "vehicle movement detected" : antiCheatReason;
+            Toast.makeText(this, "Anti-Cheat: " + reason + " run canceled", Toast.LENGTH_LONG).show();
+
+            sessionInvalidatedByAntiCheat = false;
+            antiCheatReason = null;
+            return;
+        }
 
         if (isPathClosed()) {
             double area = drawClaimedAreaPolygon();
@@ -785,8 +870,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             }
             updateTrackingStats();
             
-            // Fix: Camera follows the user during a session
-            if (sessionRunning || !hasCenteredOnUserLocation) {
+            // fixed by Moemen: follow during a run only while follow mode is enabled
+            if ((sessionRunning && followUserCamera) || !hasCenteredOnUserLocation) {
                 moveCameraToLocation(location);
             }
         });
