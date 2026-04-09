@@ -1,5 +1,6 @@
 package com.example.heat_map_java_test_ux;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -75,6 +76,10 @@ public class LeaderboardActivity extends AppCompatActivity {
                 for (DataSnapshot data : snapshot.getChildren()) {
                     User user = data.getValue(User.class);
                     if (user != null) {
+                        // added by Moemen: fallback for older records that may miss userId in the object
+                        if (user.userId == null || user.userId.trim().isEmpty()) {
+                            user.userId = data.getKey();
+                        }
                         userList.add(user);
                     }
                 }
@@ -128,6 +133,17 @@ public class LeaderboardActivity extends AppCompatActivity {
             } else {
                 holder.value.setText(String.format(Locale.US, "%.1f km", user.totalDistanceWalked / 1000.0));
             }
+
+            holder.itemView.setOnClickListener(v -> {
+                if (user.userId == null || user.userId.trim().isEmpty()) {
+                    return;
+                }
+
+                // added by Moemen: tap a leaderboard row to jump straight to that player profile
+                Intent intent = new Intent(LeaderboardActivity.this, ProfileActivity.class);
+                intent.putExtra("USER_ID", user.userId);
+                startActivity(intent);
+            });
         }
 
         @Override
