@@ -9,12 +9,22 @@ import android.content.pm.PackageManager;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.graphics.Color;
+import android.location.Address;
+import android.location.Geocoder;
 import android.location.Location;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -42,13 +52,18 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import com.google.android.gms.maps.model.Polygon;
 import com.google.android.gms.maps.model.PolygonOptions;
@@ -75,8 +90,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
     private static final String CHANNEL_ID_LAND = "land_takeover_channel";
     private static final float DEFAULT_ZOOM = 16f;
+    private static final float PLACE_SEARCH_ZOOM = 10.5f;
     private static final float MAX_LOCATION_ACCURACY_METERS = 35f;
     private static final double MIN_SIGNIFICANT_LAND_LOSS_M2 = 100.0; 
+    private static final int PLACE_SEARCH_MIN_QUERY_LENGTH = 2;
+    private static final int PLACE_SEARCH_MAX_RESULTS = 6;
+    private static final long PLACE_SEARCH_DEBOUNCE_MS = 350L;
 
     private GoogleMap mMap;
     private FusedLocationProviderClient fusedLocationClient;
@@ -94,11 +113,19 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private TextView chipArea;
     private MaterialButton sessionButton;
     private FrameLayout loadingOverlay;
+    private AutoCompleteTextView placeSearchInput;
+    private ArrayAdapter<String> placeSearchAdapter;
 
     private final List<LatLng> trackedPath = new ArrayList<>();
+    private final List<PlaceSuggestion> placeSuggestions = new ArrayList<>();
     private Polyline activePathPolyline;
     private Location lastAcceptedLocation;
     private float totalDistanceMeters = 0f;
+    private final Handler placeSearchHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService geocodeExecutor = Executors.newSingleThreadExecutor();
+    private Runnable pendingSearchRunnable;
+    private int latestPlaceQueryToken = 0;
+    private boolean suppressPlaceSearchWatcher = false;
 
     private TrackingService trackingService;
     private boolean isBound = false;
@@ -152,6 +179,16 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private String currentUserColor = "#FF5A1F"; // Added to track user color for redraws
     private String lastRenderedTerritoryFingerprint = "";
 
+    private static class PlaceSuggestion {
+        final String label;
+        final LatLng latLng;
+
+        PlaceSuggestion(String label, LatLng latLng) {
+            this.label = label;
+            this.latLng = latLng;
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -177,6 +214,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         setupPreviewControls();
+        setupPlaceSearchControl();
 
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
@@ -304,6 +342,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
     }
 
+    @Override
+    protected void onDestroy() {
+        // fixed by Moemen: clean search tasks so this screen can be opened/closed safely
+        placeSearchHandler.removeCallbacksAndMessages(null);
+        geocodeExecutor.shutdownNow();
+        super.onDestroy();
+    }
+
     private void checkIfUsernameSet() {
         mUserRef.child("username").get().addOnSuccessListener(snapshot -> {
             if (!snapshot.exists()) {
@@ -360,6 +406,187 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 })
                 .setNegativeButton("Close", null)
                 .show();
+    }
+
+    private void setupPlaceSearchControl() {
+        placeSearchInput = findViewById(R.id.place_search_input);
+        if (placeSearchInput == null) return;
+
+        placeSearchAdapter = new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, new ArrayList<>());
+        placeSearchInput.setAdapter(placeSearchAdapter);
+        placeSearchInput.setThreshold(PLACE_SEARCH_MIN_QUERY_LENGTH);
+
+        placeSearchInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable editable) {
+                if (suppressPlaceSearchWatcher) return;
+                requestPlaceSuggestions(editable == null ? "" : editable.toString());
+            }
+        });
+
+        placeSearchInput.setOnItemClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= placeSuggestions.size()) return;
+            focusMapOnSuggestion(placeSuggestions.get(position));
+        });
+
+        placeSearchInput.setOnEditorActionListener((v, actionId, event) -> {
+            boolean isSearchAction = actionId == EditorInfo.IME_ACTION_SEARCH
+                    || actionId == EditorInfo.IME_ACTION_DONE
+                    || (event != null && event.getAction() == KeyEvent.ACTION_DOWN && event.getKeyCode() == KeyEvent.KEYCODE_ENTER);
+
+            if (!isSearchAction) return false;
+
+            String query = v.getText() == null ? "" : v.getText().toString().trim();
+            if (!query.isEmpty()) {
+                performDirectPlaceSearch(query);
+            }
+            return true;
+        });
+    }
+
+    private void requestPlaceSuggestions(String rawQuery) {
+        String query = rawQuery == null ? "" : rawQuery.trim();
+
+        if (query.length() < PLACE_SEARCH_MIN_QUERY_LENGTH) {
+            clearPlaceSuggestions();
+            return;
+        }
+
+        if (!Geocoder.isPresent()) {
+            clearPlaceSuggestions();
+            return;
+        }
+
+        if (pendingSearchRunnable != null) {
+            placeSearchHandler.removeCallbacks(pendingSearchRunnable);
+        }
+
+        int token = ++latestPlaceQueryToken;
+        pendingSearchRunnable = () -> geocodeExecutor.execute(() -> {
+            List<PlaceSuggestion> suggestions = geocodeToSuggestions(query, PLACE_SEARCH_MAX_RESULTS);
+            runOnUiThread(() -> {
+                if (isFinishing() || token != latestPlaceQueryToken) return;
+                updatePlaceSuggestionDropdown(suggestions);
+            });
+        });
+        placeSearchHandler.postDelayed(pendingSearchRunnable, PLACE_SEARCH_DEBOUNCE_MS);
+    }
+
+    private void performDirectPlaceSearch(String query) {
+        if (!Geocoder.isPresent()) return;
+
+        int token = ++latestPlaceQueryToken;
+        geocodeExecutor.execute(() -> {
+            List<PlaceSuggestion> suggestions = geocodeToSuggestions(query, 1);
+            runOnUiThread(() -> {
+                if (isFinishing() || token != latestPlaceQueryToken) return;
+
+                if (suggestions.isEmpty()) {
+                    Toast.makeText(this, getString(R.string.map_search_no_results), Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                focusMapOnSuggestion(suggestions.get(0));
+            });
+        });
+    }
+
+    private List<PlaceSuggestion> geocodeToSuggestions(String query, int limit) {
+        List<PlaceSuggestion> results = new ArrayList<>();
+        Set<String> seenLabels = new HashSet<>();
+
+        try {
+            Geocoder geocoder = new Geocoder(this, Locale.getDefault());
+            List<Address> addresses = geocoder.getFromLocationName(query, limit);
+            if (addresses == null) return results;
+
+            for (Address address : addresses) {
+                if (address == null || !address.hasLatitude() || !address.hasLongitude()) continue;
+
+                String label = buildAddressLabel(address);
+                if (label.isEmpty() || seenLabels.contains(label)) continue;
+
+                seenLabels.add(label);
+                results.add(new PlaceSuggestion(label, new LatLng(address.getLatitude(), address.getLongitude())));
+            }
+        } catch (IOException | IllegalArgumentException e) {
+            Log.w(TAG, "Place search failed", e);
+        }
+
+        return results;
+    }
+
+    private String buildAddressLabel(Address address) {
+        List<String> parts = new ArrayList<>();
+        addAddressPart(parts, address.getLocality());
+        addAddressPart(parts, address.getSubAdminArea());
+        addAddressPart(parts, address.getAdminArea());
+        addAddressPart(parts, address.getCountryName());
+
+        if (parts.isEmpty()) {
+            addAddressPart(parts, address.getFeatureName());
+        }
+        if (parts.isEmpty()) {
+            addAddressPart(parts, address.getAddressLine(0));
+        }
+
+        StringBuilder label = new StringBuilder();
+        for (int i = 0; i < parts.size(); i++) {
+            if (i > 0) label.append(", ");
+            label.append(parts.get(i));
+        }
+        return label.toString();
+    }
+
+    private void addAddressPart(List<String> parts, String value) {
+        if (value == null) return;
+        String clean = value.trim();
+        if (clean.isEmpty()) return;
+        if (!parts.contains(clean)) {
+            parts.add(clean);
+        }
+    }
+
+    private void updatePlaceSuggestionDropdown(List<PlaceSuggestion> suggestions) {
+        placeSuggestions.clear();
+        placeSuggestions.addAll(suggestions);
+
+        placeSearchAdapter.clear();
+        for (PlaceSuggestion suggestion : suggestions) {
+            placeSearchAdapter.add(suggestion.label);
+        }
+        placeSearchAdapter.notifyDataSetChanged();
+
+        if (!suggestions.isEmpty() && placeSearchInput.hasFocus()) {
+            placeSearchInput.showDropDown();
+        }
+    }
+
+    private void clearPlaceSuggestions() {
+        placeSuggestions.clear();
+        placeSearchAdapter.clear();
+        placeSearchAdapter.notifyDataSetChanged();
+    }
+
+    private void focusMapOnSuggestion(PlaceSuggestion suggestion) {
+        if (mMap == null || suggestion == null) return;
+
+        suppressPlaceSearchWatcher = true;
+        placeSearchInput.setText(suggestion.label, false);
+        suppressPlaceSearchWatcher = false;
+
+        // fixed by Moemen: searching is exploration, we should not force recenter while user browses places
+        followUserCamera = false;
+        hasCenteredOnUserLocation = true;
+        placeSearchInput.clearFocus();
+        placeSearchInput.dismissDropDown();
+        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(suggestion.latLng, PLACE_SEARCH_ZOOM));
     }
 
     private void loadMapData() {

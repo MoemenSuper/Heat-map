@@ -16,4 +16,7 @@
     <string name="facebook_sign_in">Sign in with Facebook</string>
     <string name="create_account">Create Account</string>
     <string name="join_territory">Join the territory claim</string>
+    <string name="map_search_hint">Search city, country, or region</string>
+    <string name="map_search_icon_desc">Search places</string>
+    <string name="map_search_no_results">No places found for that search</string>
 </resources>
