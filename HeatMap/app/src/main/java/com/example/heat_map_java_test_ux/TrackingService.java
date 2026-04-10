@@ -91,6 +91,9 @@ public class TrackingService extends Service {
             public void onLocationResult(LocationResult locationResult) {
                 if (locationResult == null) return;
                 for (Location location : locationResult.getLocations()) {
+                    // fixed by Moemen: if cheating is already reported in this batch, stop processing
+                    if (cheatingAlreadyReported) break;
+
                     if (isLocationValid(location)) {
                         if (listener != null) {
                             listener.onLocationUpdate(location);

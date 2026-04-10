@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.Patterns;
+import android.widget.TextView;
 import android.widget.Toast;
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -12,6 +13,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
@@ -46,6 +48,7 @@ public class MainActivity extends AppCompatActivity {
         passwordEditText = findViewById(R.id.password_edit_text);
         MaterialButton signInButton = findViewById(R.id.sign_in_button);
         MaterialButton signUpButtonLink = findViewById(R.id.sign_up_button_link);
+        TextView forgotPasswordText = findViewById(R.id.forgot_password_text);
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
@@ -69,6 +72,39 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
+
+        forgotPasswordText.setOnClickListener(v -> handleForgotPassword());
+    }
+
+    private void handleForgotPassword() {
+        String email = emailEditText.getText().toString().trim();
+        if (email.isEmpty()) {
+            emailEditText.setError("Enter your email to reset password");
+            emailEditText.requestFocus();
+            return;
+        }
+
+        if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            emailEditText.setError("Please enter a valid email");
+            emailEditText.requestFocus();
+            return;
+        }
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Reset Password")
+                .setMessage("Send a password reset link to " + email + "?")
+                .setPositiveButton("Send", (dialog, which) -> {
+                    mAuth.sendPasswordResetEmail(email)
+                            .addOnCompleteListener(task -> {
+                                if (task.isSuccessful()) {
+                                    Toast.makeText(MainActivity.this, "Reset link sent to your email", Toast.LENGTH_LONG).show();
+                                } else {
+                                    Toast.makeText(MainActivity.this, "Error: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
+                                }
+                            });
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private boolean validateInput(String email, String password) {
