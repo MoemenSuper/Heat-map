@@ -41,6 +41,8 @@ public class ProfileActivity extends AppCompatActivity {
     private FirebaseAuth mAuth;
     private DatabaseReference mUserRef;
     private DatabaseReference mTerritoryRef;
+    private ValueEventListener userProfileListener;
+    private ValueEventListener territoryStatsListener;
 
     private MaterialCardView cardNovice, cardExplorer, cardMaster;
     private android.widget.ImageView iconNovice, iconExplorer, iconMaster;
@@ -208,7 +210,11 @@ public class ProfileActivity extends AppCompatActivity {
     }
 
     private void loadUserProfile() {
-        mUserRef.addValueEventListener(new ValueEventListener() {
+        if (userProfileListener != null) {
+            mUserRef.removeEventListener(userProfileListener);
+        }
+
+        userProfileListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 User user = snapshot.getValue(User.class);
@@ -221,11 +227,17 @@ public class ProfileActivity extends AppCompatActivity {
             }
             @Override
             public void onCancelled(@NonNull DatabaseError error) {}
-        });
+        };
+
+        mUserRef.addValueEventListener(userProfileListener);
     }
 
     private void calculateStatsFromExistingData(String userId) {
-        mTerritoryRef.addValueEventListener(new ValueEventListener() {
+        if (territoryStatsListener != null) {
+            mTerritoryRef.removeEventListener(territoryStatsListener);
+        }
+
+        territoryStatsListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 double totalAreaM2 = 0;
@@ -257,7 +269,21 @@ public class ProfileActivity extends AppCompatActivity {
             }
             @Override
             public void onCancelled(@NonNull DatabaseError error) {}
-        });
+        };
+
+        mTerritoryRef.addValueEventListener(territoryStatsListener);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (mUserRef != null && userProfileListener != null) {
+            // added by Moemen: avoid stacking profile listeners on repeated screen opens
+            mUserRef.removeEventListener(userProfileListener);
+        }
+        if (mTerritoryRef != null && territoryStatsListener != null) {
+            mTerritoryRef.removeEventListener(territoryStatsListener);
+        }
     }
 
     private void updateAwards(double areaKm2, double distKm) {

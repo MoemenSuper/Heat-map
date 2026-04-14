@@ -17,6 +17,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
@@ -45,6 +46,7 @@ import com.google.android.gms.maps.model.MapStyleOptions;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.android.gms.tasks.CancellationTokenSource;
@@ -93,6 +95,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private static final float PLACE_SEARCH_ZOOM = 10.5f;
     private static final float MAX_LOCATION_ACCURACY_METERS = 35f;
     private static final double MIN_SIGNIFICANT_LAND_LOSS_M2 = 100.0; 
+    private static final double VIEWPORT_RENDER_PADDING_DEGREES = 0.35;
+    private static final long TERRITORY_REDRAW_DEBOUNCE_MS = 180L;
+    private static final long TRACKING_POLYLINE_UPDATE_THROTTLE_MS = 550L;
+    private static final long TRACKING_CAMERA_UPDATE_THROTTLE_MS = 1800L;
     private static final int PLACE_SEARCH_MIN_QUERY_LENGTH = 2;
     private static final int PLACE_SEARCH_MAX_RESULTS = 6;
     private static final long PLACE_SEARCH_DEBOUNCE_MS = 350L;
@@ -124,8 +130,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private final Handler placeSearchHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService geocodeExecutor = Executors.newSingleThreadExecutor();
     private Runnable pendingSearchRunnable;
+    private Runnable pendingTerritoryRedrawRunnable;
     private int latestPlaceQueryToken = 0;
     private boolean suppressPlaceSearchWatcher = false;
+    private long lastPolylineUiUpdateMs = 0L;
+    private long lastCameraUiUpdateMs = 0L;
 
     private TrackingService trackingService;
     private boolean isBound = false;
@@ -340,6 +349,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (mDatabase != null && territoryWatchdogListener != null) {
             mDatabase.removeEventListener(territoryWatchdogListener);
         }
+
+        if (pendingTerritoryRedrawRunnable != null) {
+            placeSearchHandler.removeCallbacks(pendingTerritoryRedrawRunnable);
+        }
     }
 
     @Override
@@ -371,6 +384,13 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             if (reason == GoogleMap.OnCameraMoveStartedListener.REASON_GESTURE && sessionRunning) {
                 // fixed by Moemen: if the player starts navigating the map we stop forced recenter
                 followUserCamera = false;
+            }
+        });
+
+        mMap.setOnCameraIdleListener(() -> {
+            if (lastTerritoriesSnapshot != null) {
+                // added by Moemen: only refresh heavy map polygons after camera settles
+                scheduleTerritoryRedraw();
             }
         });
 
@@ -605,8 +625,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                         }
                     }
                 }
-                if (lastTerritoriesSnapshot != null) {
-                    processAndDrawTerritories(lastTerritoriesSnapshot);
+
+                // added by Moemen: color metadata updates should restyle current polygons, not trigger a full geometry redraw
+                applyUserColorsToVisiblePolygons();
+
+                if (lastTerritoriesSnapshot != null && remotePolygons.isEmpty()) {
+                    scheduleTerritoryRedraw();
                 }
             }
             @Override
@@ -619,7 +643,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 lastTerritoriesSnapshot = snapshot;
-                processAndDrawTerritories(snapshot);
+                scheduleTerritoryRedraw();
             }
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
@@ -627,6 +651,44 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             }
         };
         mDatabase.addValueEventListener(territoriesListener);
+    }
+
+    private void scheduleTerritoryRedraw() {
+        if (mMap == null || lastTerritoriesSnapshot == null) return;
+
+        if (pendingTerritoryRedrawRunnable != null) {
+            placeSearchHandler.removeCallbacks(pendingTerritoryRedrawRunnable);
+        }
+
+        pendingTerritoryRedrawRunnable = () -> {
+            if (mMap == null || lastTerritoriesSnapshot == null) return;
+            processAndDrawTerritories(lastTerritoriesSnapshot);
+        };
+
+        // added by Moemen: debounce bursty firebase updates into one redraw to cut frame drops
+        placeSearchHandler.postDelayed(pendingTerritoryRedrawRunnable, TERRITORY_REDRAW_DEBOUNCE_MS);
+    }
+
+    private void applyUserColorsToVisiblePolygons() {
+        if (mMap == null || remotePolygons.isEmpty()) return;
+
+        for (Polygon polygon : remotePolygons) {
+            Object tag = polygon.getTag();
+            if (!(tag instanceof String)) continue;
+
+            String userId = (String) tag;
+            String userColorHex = userColors.get(userId);
+            if (userColorHex == null) userColorHex = "#FF5A1F";
+
+            try {
+                int strokeColor = Color.parseColor(userColorHex);
+                int fillColor = Color.argb(100, Color.red(strokeColor), Color.green(strokeColor), Color.blue(strokeColor));
+                polygon.setStrokeColor(strokeColor);
+                polygon.setFillColor(fillColor);
+            } catch (IllegalArgumentException ignored) {
+                // ignore malformed colors and keep previous style
+            }
+        }
     }
 
     private void processAndDrawTerritories(DataSnapshot dataSnapshot) {
@@ -645,9 +707,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         refreshActivePathPolyline();
 
         List<Territory> territories = new ArrayList<>();
+        LatLngBounds visibleBounds = mMap.getProjection().getVisibleRegion().latLngBounds;
         for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
             Territory territory = snapshot.getValue(Territory.class);
-            if (territory != null && territory.points != null) {
+            if (territory != null && territory.points != null && isTerritoryNearBounds(territory, visibleBounds)) {
                 territories.add(territory);
             }
         }
@@ -680,6 +743,41 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         
         lastRenderedTerritoryFingerprint = fingerprint;
         loadingOverlay.setVisibility(View.GONE);
+    }
+
+    private boolean isTerritoryNearBounds(Territory territory, LatLngBounds bounds) {
+        if (bounds == null || territory == null || territory.points == null || territory.points.isEmpty()) {
+            return true;
+        }
+
+        double minLat = 90.0;
+        double maxLat = -90.0;
+        double minLng = 180.0;
+        double maxLng = -180.0;
+
+        for (Territory.MyLatLng point : territory.points) {
+            if (point == null) continue;
+            minLat = Math.min(minLat, point.latitude);
+            maxLat = Math.max(maxLat, point.latitude);
+            minLng = Math.min(minLng, point.longitude);
+            maxLng = Math.max(maxLng, point.longitude);
+        }
+
+        double south = bounds.southwest.latitude - VIEWPORT_RENDER_PADDING_DEGREES;
+        double north = bounds.northeast.latitude + VIEWPORT_RENDER_PADDING_DEGREES;
+        double west = bounds.southwest.longitude - VIEWPORT_RENDER_PADDING_DEGREES;
+        double east = bounds.northeast.longitude + VIEWPORT_RENDER_PADDING_DEGREES;
+
+        if (maxLat < south || minLat > north) {
+            return false;
+        }
+
+        // added by Moemen: handles dateline-safe bounds check for normal territory extents
+        if (west <= east) {
+            return !(maxLng < west || minLng > east);
+        }
+
+        return !(maxLng < west && minLng > east);
     }
 
     private void clearTerritoryOverlays() {
@@ -1093,14 +1191,22 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         trackedPath.add(point);
         
         runOnUiThread(() -> {
-            if (activePathPolyline != null) {
+            long nowMs = SystemClock.uptimeMillis();
+
+            boolean shouldUpdatePolyline = trackedPath.size() <= 3
+                    || (nowMs - lastPolylineUiUpdateMs) >= TRACKING_POLYLINE_UPDATE_THROTTLE_MS;
+            if (activePathPolyline != null && shouldUpdatePolyline) {
                 activePathPolyline.setPoints(trackedPath);
+                lastPolylineUiUpdateMs = nowMs;
             }
             updateTrackingStats();
             
             // fixed by Moemen: follow during a run only while follow mode is enabled
-            if ((sessionRunning && followUserCamera) || !hasCenteredOnUserLocation) {
+            boolean shouldUpdateCamera = !hasCenteredOnUserLocation
+                    || (nowMs - lastCameraUiUpdateMs) >= TRACKING_CAMERA_UPDATE_THROTTLE_MS;
+            if (((sessionRunning && followUserCamera) || !hasCenteredOnUserLocation) && shouldUpdateCamera) {
                 moveCameraToLocation(location);
+                lastCameraUiUpdateMs = nowMs;
             }
         });
     }

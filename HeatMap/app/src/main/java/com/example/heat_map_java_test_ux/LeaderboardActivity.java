@@ -31,6 +31,7 @@ public class LeaderboardActivity extends AppCompatActivity {
     private LeaderboardAdapter adapter;
     private final List<User> userList = new ArrayList<>();
     private DatabaseReference usersRef;
+    private ValueEventListener usersListener;
     private ProgressBar progressBar;
     private boolean sortByTerritory = true;
 
@@ -69,7 +70,12 @@ public class LeaderboardActivity extends AppCompatActivity {
 
     private void fetchUsers() {
         progressBar.setVisibility(View.VISIBLE);
-        usersRef.addValueEventListener(new ValueEventListener() {
+
+        if (usersListener != null) {
+            usersRef.removeEventListener(usersListener);
+        }
+
+        usersListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 userList.clear();
@@ -91,7 +97,18 @@ public class LeaderboardActivity extends AppCompatActivity {
             public void onCancelled(@NonNull DatabaseError error) {
                 progressBar.setVisibility(View.GONE);
             }
-        });
+        };
+
+        usersRef.addValueEventListener(usersListener);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (usersRef != null && usersListener != null) {
+            // added by Moemen: detach realtime listener when screen is hidden to avoid duplicate observers
+            usersRef.removeEventListener(usersListener);
+        }
     }
 
     private void sortAndDisplay() {

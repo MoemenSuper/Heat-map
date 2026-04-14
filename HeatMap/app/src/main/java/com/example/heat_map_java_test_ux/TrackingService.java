@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.location.Location;
 import android.os.Binder;
 import android.os.Build;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
@@ -53,6 +54,7 @@ public class TrackingService extends Service {
     
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
+    private HandlerThread locationThread;
     private final IBinder binder = new LocalBinder();
     
     private Location lastRawLocation = null;
@@ -85,6 +87,9 @@ public class TrackingService extends Service {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         createNotificationChannel();
         resetDetectionState();
+
+        locationThread = new HandlerThread("heatmap-location-thread");
+        locationThread.start();
         
         locationCallback = new LocationCallback() {
             @Override
@@ -327,7 +332,8 @@ public class TrackingService extends Service {
                 .setMinUpdateDistanceMeters(2f)
                 .build();
 
-        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
+        Looper callbackLooper = locationThread != null ? locationThread.getLooper() : Looper.getMainLooper();
+        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, callbackLooper);
     }
 
     private void stopLocationUpdates() {
@@ -375,6 +381,11 @@ public class TrackingService extends Service {
     @Override
     public void onDestroy() {
         stopLocationUpdates();
+        if (locationThread != null) {
+            // added by Moemen: free background callback thread when service is destroyed
+            locationThread.quitSafely();
+            locationThread = null;
+        }
         super.onDestroy();
     }
 }
