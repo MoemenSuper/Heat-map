@@ -19,4 +19,26 @@
     <string name="map_search_hint">Search city, country, or region</string>
     <string name="map_search_icon_desc">Search places</string>
     <string name="map_search_no_results">No places found for that search</string>
+    <string name="leaderboard_tab_territory">Territory</string>
+    <string name="leaderboard_tab_distance">Distance</string>
+    <string name="leaderboard_tab_mes_stats">My Stats</string>
+    <string name="period_this_month">This Month</string>
+    <string name="period_last_month">Last Month</string>
+    <string name="period_three_months">3 Months</string>
+    <string name="period_all_time">All Time</string>
+    <string name="label_surface_conquise">SURFACE CONQUERED</string>
+    <string name="label_distance_totale">TOTAL DISTANCE</string>
+    <string name="label_sessions">SESSIONS</string>
+    <string name="label_meilleure_session">BEST SESSION</string>
+    <string name="label_record_personnel">Personal Record</string>
+    <string name="label_progression_territoire">PROGRESSION BY TERRITORY</string>
+    <string name="label_progression_hebdo">Weekly Progress</string>
+    <string name="ghost_title">Your Ghost</string>
+    <string name="ghost_title_win">Beat Your Record</string>
+    <string name="ghost_record_broken">Record beaten this week!</string>
+    <string name="mes_empty_title">No sessions yet this month</string>
+    <string name="mes_empty_subtitle">Start a session to begin conquering.</string>
+    <string name="mes_empty_action">Start Session</string>
+    <string name="mes_stats_peak">Pic</string>
+    <string name="mes_stats_no_data">No data yet</string>
 </resources>
