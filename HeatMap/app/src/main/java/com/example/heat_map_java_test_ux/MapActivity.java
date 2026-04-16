@@ -20,10 +20,14 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.transition.AutoTransition;
+import android.transition.TransitionManager;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.FrameLayout;
@@ -121,6 +125,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private FrameLayout loadingOverlay;
     private AutoCompleteTextView placeSearchInput;
     private ArrayAdapter<String> placeSearchAdapter;
+    private MaterialCardView placeSearchCard;
+    private android.widget.ImageView searchIconTrigger;
 
     private final List<LatLng> trackedPath = new ArrayList<>();
     private final List<PlaceSuggestion> placeSuggestions = new ArrayList<>();
@@ -247,202 +253,99 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (currentUser == null) return;
 
         if (territoryWatchdogListener != null) mDatabase.removeEventListener(territoryWatchdogListener);
-
+        
         territoryWatchdogListener = new ChildEventListener() {
             @Override
-            public void onChildAdded(@NonNull DataSnapshot snapshot, String prev) {
+            public void onChildChanged(@NonNull DataSnapshot snapshot, String prevChildKey) {
                 Territory territory = snapshot.getValue(Territory.class);
                 if (territory != null && territory.userId.equals(currentUser.getUid())) {
+                    Double prevArea = myTerritoryAreas.get(snapshot.getKey());
+                    if (prevArea != null) {
+                        double loss = prevArea - territory.area;
+                        if (loss >= MIN_SIGNIFICANT_LAND_LOSS_M2) {
+                            sendLandLossNotification(loss);
+                        }
+                    }
                     myTerritoryAreas.put(snapshot.getKey(), territory.area);
                 }
             }
 
-            @Override
-            public void onChildChanged(@NonNull DataSnapshot snapshot, String prev) {
-                Territory updated = snapshot.getValue(Territory.class);
-                if (updated != null && updated.userId.equals(currentUser.getUid())) {
-                    String key = snapshot.getKey();
-                    Double oldArea = myTerritoryAreas.get(key);
-                    
-                    if (oldArea != null) {
-                        double loss = oldArea - updated.area;
-                        if (loss > MIN_SIGNIFICANT_LAND_LOSS_M2) {
-                            sendLandLossNotification(String.format(Locale.US, 
-                                "Alert! Another player just took %.0f m² of your territory!", loss));
-                        }
-                    }
-                    myTerritoryAreas.put(key, updated.area);
-                }
+            @Override public void onChildAdded(@NonNull DataSnapshot s, String p) {
+                Territory t = s.getValue(Territory.class);
+                if (t != null && t.userId.equals(currentUser.getUid())) myTerritoryAreas.put(s.getKey(), t.area);
             }
-
-            @Override
-            public void onChildRemoved(@NonNull DataSnapshot snapshot) {
-                Territory removed = snapshot.getValue(Territory.class);
-                if (removed != null && removed.userId.equals(currentUser.getUid())) {
-                    if (removed.area > MIN_SIGNIFICANT_LAND_LOSS_M2) {
-                        sendLandLossNotification("Major Defeat! A large piece of your land was completely conquered.");
-                    }
-                    myTerritoryAreas.remove(snapshot.getKey());
-                }
-            }
-
-            @Override
-            public void onChildMoved(@NonNull DataSnapshot snapshot, String prev) {}
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {}
+            @Override public void onChildRemoved(@NonNull DataSnapshot s) { myTerritoryAreas.remove(s.getKey()); }
+            @Override public void onChildMoved(@NonNull DataSnapshot s, String p) {}
+            @Override public void onCancelled(@NonNull DatabaseError e) {}
         };
         mDatabase.addChildEventListener(territoryWatchdogListener);
     }
 
-    @SuppressLint("MissingPermission")
-    private void sendLandLossNotification(String message) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                return;
-            }
-        }
-
+    private void sendLandLossNotification(double lossM2) {
+        String msg = String.format(Locale.US, "Alert! You just lost %.0f m² of territory!", lossM2);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID_LAND)
                 .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentTitle("Territory Lost!")
-                .setContentText(message)
+                .setContentTitle("Territory Lost")
+                .setContentText(msg)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setAutoCancel(true);
 
-        NotificationManagerCompat notificationManager = NotificationManagerCompat.from(this);
-        notificationManager.notify((int) System.currentTimeMillis(), builder.build());
-    }
-
-    @Override
-    protected void onStart() {
-        super.onStart();
-        Intent intent = new Intent(this, TrackingService.class);
-        bindService(intent, serviceConnection, BIND_AUTO_CREATE);
-        
-        // Re-attach listeners when returning to the activity
-        setupTerritoryWatchdog();
-        if (mMap != null) {
-            loadMapData();
-            setupTrackingPathOverlay();
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            NotificationManagerCompat.from(this).notify((int)System.currentTimeMillis(), builder.build());
         }
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        if (isBound) {
-            unbindService(serviceConnection);
-            isBound = false;
-        }
-
-        // Fix for Issue 7: Remove Firebase listeners to prevent memory leaks
-        if (mAllUsersRef != null && usersListener != null) {
-            mAllUsersRef.removeEventListener(usersListener);
-        }
-        if (mDatabase != null && territoriesListener != null) {
-            mDatabase.removeEventListener(territoriesListener);
-        }
-        if (mUserRef != null && userColorListener != null) {
-            mUserRef.child("territoryColor").removeEventListener(userColorListener);
-        }
-        if (mDatabase != null && territoryWatchdogListener != null) {
-            mDatabase.removeEventListener(territoryWatchdogListener);
-        }
-
-        if (pendingTerritoryRedrawRunnable != null) {
-            placeSearchHandler.removeCallbacks(pendingTerritoryRedrawRunnable);
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        // fixed by Moemen: clean search tasks so this screen can be opened/closed safely
-        placeSearchHandler.removeCallbacksAndMessages(null);
-        geocodeExecutor.shutdownNow();
-        super.onDestroy();
     }
 
     private void checkIfUsernameSet() {
         mUserRef.child("username").get().addOnSuccessListener(snapshot -> {
-            if (!snapshot.exists()) {
-                Toast.makeText(this, "Please set a username in your profile", Toast.LENGTH_LONG).show();
+            if (!snapshot.exists() || snapshot.getValue(String.class) == null || snapshot.getValue(String.class).isEmpty()) {
+                showUsernameDialog();
             }
         });
     }
 
-    @Override
-    public void onMapReady(@NonNull GoogleMap googleMap) {
-        mMap = googleMap;
-        applyMapStyle();
-        mMap.getUiSettings().setMyLocationButtonEnabled(true);
-        mMap.getUiSettings().setCompassEnabled(false);
-        mMap.getUiSettings().setMapToolbarEnabled(false);
-        mMap.setPadding(0, 170, 0, 260);
-
-        mMap.setOnCameraMoveStartedListener(reason -> {
-            if (reason == GoogleMap.OnCameraMoveStartedListener.REASON_GESTURE && sessionRunning) {
-                // fixed by Moemen: if the player starts navigating the map we stop forced recenter
-                followUserCamera = false;
-            }
-        });
-
-        mMap.setOnCameraIdleListener(() -> {
-            if (lastTerritoriesSnapshot != null) {
-                // added by Moemen: only refresh heavy map polygons after camera settles
-                scheduleTerritoryRedraw();
-            }
-        });
-
-        mMap.setOnMyLocationButtonClickListener(() -> {
-            // fixed by Moemen: location button means go back to follow mode
-            followUserCamera = true;
-            return false;
-        });
-
-        mMap.setOnPolygonClickListener(polygon -> {
-            String userId = (String) polygon.getTag();
-            if (userId != null) {
-                showOwnerDialog(userId);
-            }
-        });
-
-        enableMyLocation();
-        setupTrackingPathOverlay();
-        loadMapData();
-    }
-
-    private void showOwnerDialog(String userId) {
-        String name = userNames.get(userId);
-        if (name == null) name = "Unknown Player";
+    private void showUsernameDialog() {
+        final AutoCompleteTextView input = new AutoCompleteTextView(this);
+        input.setHint("Enter Username");
+        input.setPadding(48, 32, 48, 32);
 
         new MaterialAlertDialogBuilder(this)
-                .setTitle("Territory Owner")
-                .setMessage("This land belongs to: " + name)
-                .setPositiveButton("View Profile", (dialog, which) -> {
-                    Intent intent = new Intent(MapActivity.this, ProfileActivity.class);
-                    intent.putExtra("USER_ID", userId);
-                    startActivity(intent);
+                .setTitle("Set Username")
+                .setMessage("Choose a name for the leaderboard.")
+                .setView(input)
+                .setCancelable(false)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    String name = input.getText().toString().trim();
+                    if (!name.isEmpty()) mUserRef.child("username").setValue(name);
+                    else showUsernameDialog();
                 })
-                .setNegativeButton("Close", null)
                 .show();
     }
 
     private void setupPlaceSearchControl() {
+        placeSearchCard = findViewById(R.id.place_search_card);
         placeSearchInput = findViewById(R.id.place_search_input);
-        if (placeSearchInput == null) return;
+        searchIconTrigger = findViewById(R.id.search_icon_trigger);
+        
+        if (placeSearchInput == null || placeSearchCard == null) return;
 
         placeSearchAdapter = new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, new ArrayList<>());
         placeSearchInput.setAdapter(placeSearchAdapter);
         placeSearchInput.setThreshold(PLACE_SEARCH_MIN_QUERY_LENGTH);
 
+        searchIconTrigger.setOnClickListener(v -> expandSearchBar());
+        placeSearchCard.setOnClickListener(v -> expandSearchBar());
+
+        placeSearchInput.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                collapseSearchBar();
+            }
+        });
+
         placeSearchInput.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
             @Override
             public void afterTextChanged(Editable editable) {
                 if (suppressPlaceSearchWatcher) return;
@@ -453,6 +356,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         placeSearchInput.setOnItemClickListener((parent, view, position, id) -> {
             if (position < 0 || position >= placeSuggestions.size()) return;
             focusMapOnSuggestion(placeSuggestions.get(position));
+            collapseSearchBar();
         });
 
         placeSearchInput.setOnEditorActionListener((v, actionId, event) -> {
@@ -466,13 +370,37 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             if (!query.isEmpty()) {
                 performDirectPlaceSearch(query);
             }
+            collapseSearchBar();
             return true;
         });
     }
 
+    private void expandSearchBar() {
+        if (placeSearchInput.getVisibility() == View.VISIBLE) return;
+        
+        TransitionManager.beginDelayedTransition((ViewGroup) placeSearchCard.getParent(), 
+                new AutoTransition().setDuration(250));
+        
+        placeSearchInput.setVisibility(View.VISIBLE);
+        placeSearchInput.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(placeSearchInput, InputMethodManager.SHOW_IMPLICIT);
+    }
+
+    private void collapseSearchBar() {
+        if (placeSearchInput.getVisibility() == View.GONE) return;
+        
+        TransitionManager.beginDelayedTransition((ViewGroup) placeSearchCard.getParent(), 
+                new AutoTransition().setDuration(250));
+        
+        placeSearchInput.setVisibility(View.GONE);
+        placeSearchInput.setText("");
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(placeSearchInput.getWindowToken(), 0);
+    }
+
     private void requestPlaceSuggestions(String rawQuery) {
         String query = rawQuery == null ? "" : rawQuery.trim();
-
         if (query.length() < PLACE_SEARCH_MIN_QUERY_LENGTH) {
             clearPlaceSuggestions();
             return;
@@ -506,12 +434,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             List<PlaceSuggestion> suggestions = geocodeToSuggestions(query, 1);
             runOnUiThread(() -> {
                 if (isFinishing() || token != latestPlaceQueryToken) return;
-
                 if (suggestions.isEmpty()) {
-                    Toast.makeText(this, getString(R.string.map_search_no_results), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "No results found", Toast.LENGTH_SHORT).show();
                     return;
                 }
-
                 focusMapOnSuggestion(suggestions.get(0));
             });
         });
@@ -528,17 +454,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
             for (Address address : addresses) {
                 if (address == null || !address.hasLatitude() || !address.hasLongitude()) continue;
-
                 String label = buildAddressLabel(address);
                 if (label.isEmpty() || seenLabels.contains(label)) continue;
-
                 seenLabels.add(label);
                 results.add(new PlaceSuggestion(label, new LatLng(address.getLatitude(), address.getLongitude())));
             }
         } catch (IOException | IllegalArgumentException e) {
             Log.w(TAG, "Place search failed", e);
         }
-
         return results;
     }
 
@@ -548,44 +471,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         addAddressPart(parts, address.getSubAdminArea());
         addAddressPart(parts, address.getAdminArea());
         addAddressPart(parts, address.getCountryName());
-
-        if (parts.isEmpty()) {
-            addAddressPart(parts, address.getFeatureName());
-        }
-        if (parts.isEmpty()) {
-            addAddressPart(parts, address.getAddressLine(0));
-        }
-
-        StringBuilder label = new StringBuilder();
-        for (int i = 0; i < parts.size(); i++) {
-            if (i > 0) label.append(", ");
-            label.append(parts.get(i));
-        }
-        return label.toString();
+        return String.join(", ", parts);
     }
 
-    private void addAddressPart(List<String> parts, String value) {
-        if (value == null) return;
-        String clean = value.trim();
-        if (clean.isEmpty()) return;
-        if (!parts.contains(clean)) {
-            parts.add(clean);
-        }
-    }
-
-    private void updatePlaceSuggestionDropdown(List<PlaceSuggestion> suggestions) {
-        placeSuggestions.clear();
-        placeSuggestions.addAll(suggestions);
-
-        placeSearchAdapter.clear();
-        for (PlaceSuggestion suggestion : suggestions) {
-            placeSearchAdapter.add(suggestion.label);
-        }
-        placeSearchAdapter.notifyDataSetChanged();
-
-        if (!suggestions.isEmpty() && placeSearchInput.hasFocus()) {
-            placeSearchInput.showDropDown();
-        }
+    private void addAddressPart(List<String> list, String part) {
+        if (part != null && !part.isEmpty()) list.add(part);
     }
 
     private void clearPlaceSuggestions() {
@@ -594,272 +484,150 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         placeSearchAdapter.notifyDataSetChanged();
     }
 
-    private void focusMapOnSuggestion(PlaceSuggestion suggestion) {
-        if (mMap == null || suggestion == null) return;
-
+    private void updatePlaceSuggestionDropdown(List<PlaceSuggestion> suggestions) {
+        placeSuggestions.clear();
+        placeSuggestions.addAll(suggestions);
+        
+        List<String> labels = new ArrayList<>();
+        for (PlaceSuggestion s : suggestions) labels.add(s.label);
+        
         suppressPlaceSearchWatcher = true;
-        placeSearchInput.setText(suggestion.label, false);
+        placeSearchAdapter.clear();
+        placeSearchAdapter.addAll(labels);
+        placeSearchAdapter.notifyDataSetChanged();
         suppressPlaceSearchWatcher = false;
+        
+        if (!labels.isEmpty() && placeSearchInput.hasFocus()) {
+            placeSearchInput.showDropDown();
+        }
+    }
 
-        // fixed by Moemen: searching is exploration, we should not force recenter while user browses places
-        followUserCamera = false;
-        hasCenteredOnUserLocation = true;
-        placeSearchInput.clearFocus();
-        placeSearchInput.dismissDropDown();
+    private void focusMapOnSuggestion(PlaceSuggestion suggestion) {
+        if (mMap == null) return;
         mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(suggestion.latLng, PLACE_SEARCH_ZOOM));
     }
 
-    private void loadMapData() {
-        if (usersListener != null) mAllUsersRef.removeEventListener(usersListener);
-        usersListener = new ValueEventListener() {
+    @Override
+    public void onMapReady(@NonNull GoogleMap googleMap) {
+        mMap = googleMap;
+        applyMapStyle();
+        enableMyLocation();
+        setupTrackingPathOverlay();
+        loadInitialData();
+        setupTerritoryWatchdog();
+        
+        mMap.setOnMapClickListener(latLng -> {
+            if (placeSearchInput.getVisibility() == View.VISIBLE) {
+                collapseSearchBar();
+            }
+        });
+    }
+
+    private void loadInitialData() {
+        mAllUsersRef.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 userColors.clear();
                 userNames.clear();
-                for (DataSnapshot userSnap : snapshot.getChildren()) {
-                    User user = userSnap.getValue(User.class);
-                    if (user != null) {
-                        userNames.put(userSnap.getKey(), user.username);
-                        if (user.territoryColor != null) {
-                            userColors.put(userSnap.getKey(), user.territoryColor);
-                        }
+                for (DataSnapshot ds : snapshot.getChildren()) {
+                    String uid = ds.getKey();
+                    String color = ds.child("territoryColor").getValue(String.class);
+                    String name = ds.child("username").getValue(String.class);
+                    if (uid != null) {
+                        if (color != null) userColors.put(uid, color);
+                        if (name != null) userNames.put(uid, name);
                     }
                 }
-
-                // added by Moemen: color metadata updates should restyle current polygons, not trigger a full geometry redraw
-                applyUserColorsToVisiblePolygons();
-
-                if (lastTerritoriesSnapshot != null && remotePolygons.isEmpty()) {
-                    scheduleTerritoryRedraw();
-                }
+                if (lastTerritoriesSnapshot != null) renderTerritories(lastTerritoriesSnapshot);
             }
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {}
-        };
-        mAllUsersRef.addValueEventListener(usersListener);
+            @Override public void onCancelled(@NonNull DatabaseError e) {}
+        });
 
-        if (territoriesListener != null) mDatabase.removeEventListener(territoriesListener);
-        territoriesListener = new ValueEventListener() {
+        mDatabase.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 lastTerritoriesSnapshot = snapshot;
-                scheduleTerritoryRedraw();
-            }
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {
-                loadingOverlay.setVisibility(View.GONE);
-            }
-        };
-        mDatabase.addValueEventListener(territoriesListener);
-    }
-
-    private void scheduleTerritoryRedraw() {
-        if (mMap == null || lastTerritoriesSnapshot == null) return;
-
-        if (pendingTerritoryRedrawRunnable != null) {
-            placeSearchHandler.removeCallbacks(pendingTerritoryRedrawRunnable);
-        }
-
-        pendingTerritoryRedrawRunnable = () -> {
-            if (mMap == null || lastTerritoriesSnapshot == null) return;
-            processAndDrawTerritories(lastTerritoriesSnapshot);
-        };
-
-        // added by Moemen: debounce bursty firebase updates into one redraw to cut frame drops
-        placeSearchHandler.postDelayed(pendingTerritoryRedrawRunnable, TERRITORY_REDRAW_DEBOUNCE_MS);
-    }
-
-    private void applyUserColorsToVisiblePolygons() {
-        if (mMap == null || remotePolygons.isEmpty()) return;
-
-        for (Polygon polygon : remotePolygons) {
-            Object tag = polygon.getTag();
-            if (!(tag instanceof String)) continue;
-
-            String userId = (String) tag;
-            String userColorHex = userColors.get(userId);
-            if (userColorHex == null) userColorHex = "#FF5A1F";
-
-            try {
-                int strokeColor = Color.parseColor(userColorHex);
-                int fillColor = Color.argb(100, Color.red(strokeColor), Color.green(strokeColor), Color.blue(strokeColor));
-                polygon.setStrokeColor(strokeColor);
-                polygon.setFillColor(fillColor);
-            } catch (IllegalArgumentException ignored) {
-                // ignore malformed colors and keep previous style
-            }
-        }
-    }
-
-    private void processAndDrawTerritories(DataSnapshot dataSnapshot) {
-        if (mMap == null) return;
-
-        String fingerprint = buildTerritoryFingerprint(dataSnapshot);
-        if (fingerprint.equals(lastRenderedTerritoryFingerprint)) {
-            // fixed by Moemen: if nothing changed we do not redraw so no chance of visual stacking
-            loadingOverlay.setVisibility(View.GONE);
-            return;
-        }
-        
-        clearTerritoryOverlays();
-
-        // Immediately redraw active elements like the current run path
-        refreshActivePathPolyline();
-
-        List<Territory> territories = new ArrayList<>();
-        LatLngBounds visibleBounds = mMap.getProjection().getVisibleRegion().latLngBounds;
-        for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
-            Territory territory = snapshot.getValue(Territory.class);
-            if (territory != null && territory.points != null && isTerritoryNearBounds(territory, visibleBounds)) {
-                territories.add(territory);
-            }
-        }
-
-        Collections.sort(territories, (t1, t2) -> Long.compare(t2.timestamp, t1.timestamp));
-
-        List<Geometry> processedGeometries = new ArrayList<>();
-
-        for (Territory t : territories) {
-            org.locationtech.jts.geom.Polygon polyJts = createJtsPolygonFromMyLatLng(t.points);
-            if (polyJts == null) continue;
-
-            Geometry currentGeom = polyJts.buffer(0);
-            
-            for (Geometry newer : processedGeometries) {
-                if (currentGeom.intersects(newer)) {
-                    try {
-                        currentGeom = currentGeom.difference(newer);
-                    } catch (Exception e) {
-                        Log.e(TAG, "Local diff failed", e);
-                    }
+                renderTerritories(snapshot);
+                if (loadingOverlay.getVisibility() == View.VISIBLE) {
+                    loadingOverlay.setVisibility(View.GONE);
                 }
             }
+            @Override public void onCancelled(@NonNull DatabaseError e) {}
+        });
+    }
 
-            if (!currentGeom.isEmpty()) {
-                drawGeometry(t, currentGeom);
-                processedGeometries.add(polyJts.buffer(0));
+    private void renderTerritories(DataSnapshot snapshot) {
+        if (mMap == null) return;
+        
+        // Build a content-based fingerprint that actually reflects territory data changes
+        StringBuilder fingerprint = new StringBuilder();
+        int count = 0;
+        for (DataSnapshot ds : snapshot.getChildren()) {
+            Territory t = ds.getValue(Territory.class);
+            if (t != null && t.points != null && t.points.size() >= 3) {
+                fingerprint.append(t.userId).append(":").append(t.points.size()).append(",");
+                count++;
             }
         }
+        fingerprint.append(count).append("_").append(userColors.size());
         
-        lastRenderedTerritoryFingerprint = fingerprint;
-        loadingOverlay.setVisibility(View.GONE);
-    }
+        String currentFingerprint = fingerprint.toString();
+        if (currentFingerprint.equals(lastRenderedTerritoryFingerprint)) return;
+        lastRenderedTerritoryFingerprint = currentFingerprint;
 
-    private boolean isTerritoryNearBounds(Territory territory, LatLngBounds bounds) {
-        if (bounds == null || territory == null || territory.points == null || territory.points.isEmpty()) {
-            return true;
-        }
-
-        double minLat = 90.0;
-        double maxLat = -90.0;
-        double minLng = 180.0;
-        double maxLng = -180.0;
-
-        for (Territory.MyLatLng point : territory.points) {
-            if (point == null) continue;
-            minLat = Math.min(minLat, point.latitude);
-            maxLat = Math.max(maxLat, point.latitude);
-            minLng = Math.min(minLng, point.longitude);
-            maxLng = Math.max(maxLng, point.longitude);
-        }
-
-        double south = bounds.southwest.latitude - VIEWPORT_RENDER_PADDING_DEGREES;
-        double north = bounds.northeast.latitude + VIEWPORT_RENDER_PADDING_DEGREES;
-        double west = bounds.southwest.longitude - VIEWPORT_RENDER_PADDING_DEGREES;
-        double east = bounds.northeast.longitude + VIEWPORT_RENDER_PADDING_DEGREES;
-
-        if (maxLat < south || minLat > north) {
-            return false;
-        }
-
-        // added by Moemen: handles dateline-safe bounds check for normal territory extents
-        if (west <= east) {
-            return !(maxLng < west || minLng > east);
-        }
-
-        return !(maxLng < west && minLng > east);
-    }
-
-    private void clearTerritoryOverlays() {
-        // fixed by Moemen: we remove map layers by handle, this is more deterministic than blanket clear
-        for (Polygon polygon : remotePolygons) {
-            polygon.remove();
-        }
-        remotePolygons.clear();
-
+        // Clear the claimed area polygon - it's no longer needed as the actual territory will now be rendered
         if (claimedAreaPolygon != null) {
             claimedAreaPolygon.remove();
             claimedAreaPolygon = null;
         }
-    }
 
-    private String buildTerritoryFingerprint(DataSnapshot dataSnapshot) {
-        StringBuilder builder = new StringBuilder();
+        // Clear and re-render all territories with consistent z-indexing
+        for (Polygon p : remotePolygons) p.remove();
+        remotePolygons.clear();
 
-        builder.append("colors:");
-        TreeMap<String, String> sortedColors = new TreeMap<>(userColors);
-        for (Map.Entry<String, String> entry : sortedColors.entrySet()) {
-            builder.append(entry.getKey()).append('=').append(entry.getValue()).append(';');
-        }
+        for (DataSnapshot ds : snapshot.getChildren()) {
+            Territory t = ds.getValue(Territory.class);
+            if (t == null || t.points == null || t.points.size() < 3) continue;
 
-        builder.append("|territories:");
-        for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
-            Territory territory = snapshot.getValue(Territory.class);
-            if (territory == null || territory.points == null) continue;
+            List<LatLng> pts = new ArrayList<>();
+            for (Territory.MyLatLng p : t.points) pts.add(new LatLng(p.latitude, p.longitude));
 
-            String key = snapshot.getKey() == null ? "no-key" : snapshot.getKey();
-            int pointCount = territory.points.size();
-            builder.append(key)
-                    .append(':')
-                    .append(territory.userId)
-                    .append(':')
-                    .append(territory.timestamp)
-                    .append(':')
-                    .append(pointCount)
-                    .append(':')
-                    .append(Math.round(territory.area))
-                    .append(';');
-        }
+            String colorStr = userColors.getOrDefault(t.userId, "#808080");
+            int color = Color.parseColor(colorStr);
+            int fill = Color.argb(100, Color.red(color), Color.green(color), Color.blue(color));
 
-        return builder.toString();
-    }
-
-    private void drawGeometry(Territory territory, Geometry geom) {
-        if (geom instanceof org.locationtech.jts.geom.Polygon) {
-            drawSingleJtsPolygon(territory, (org.locationtech.jts.geom.Polygon) geom);
-        } else if (geom instanceof MultiPolygon || geom instanceof GeometryCollection) {
-            for (int i = 0; i < geom.getNumGeometries(); i++) {
-                Geometry g = geom.getGeometryN(i);
-                if (g instanceof org.locationtech.jts.geom.Polygon) {
-                    drawSingleJtsPolygon(territory, (org.locationtech.jts.geom.Polygon) g);
-                }
-            }
+            // All territories rendered with consistent z-index
+            Polygon p = mMap.addPolygon(new PolygonOptions().addAll(pts)
+                    .strokeColor(color).strokeWidth(5f)
+                    .fillColor(fill).zIndex(1f));
+            remotePolygons.add(p);
         }
     }
 
-    private void drawSingleJtsPolygon(Territory territory, org.locationtech.jts.geom.Polygon jtsPoly) {
-        List<LatLng> path = new ArrayList<>();
-        Coordinate[] coords = jtsPoly.getExteriorRing().getCoordinates();
-        for (int i = 0; i < coords.length - 1; i++) {
-            path.add(new LatLng(coords[i].y, coords[i].x));
+    @Override
+    protected void onStart() {
+        super.onStart();
+        Intent intent = new Intent(this, TrackingService.class);
+        bindService(intent, serviceConnection, BIND_AUTO_CREATE);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (isBound) {
+            unbindService(serviceConnection);
+            isBound = false;
         }
+    }
 
-        String userColorHex = userColors.get(territory.userId);
-        if (userColorHex == null) userColorHex = "#FF5A1F";
-
-        int strokeColor = Color.parseColor(userColorHex);
-        int fillColor = Color.argb(100, Color.red(strokeColor), Color.green(strokeColor), Color.blue(strokeColor));
-
-        Polygon poly = mMap.addPolygon(new PolygonOptions()
-                .addAll(path)
-                .strokeColor(strokeColor) 
-                .strokeWidth(5f)
-                .fillColor(fillColor)
-                .clickable(true)
-                .zIndex((float) territory.timestamp / 1000000000f) 
-        );
-        poly.setTag(territory.userId);
-        remotePolygons.add(poly);
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (usersListener != null) mAllUsersRef.removeEventListener(usersListener);
+        if (territoriesListener != null) mDatabase.removeEventListener(territoriesListener);
+        if (userColorListener != null) mUserRef.child("territoryColor").removeEventListener(userColorListener);
+        if (territoryWatchdogListener != null) mDatabase.removeEventListener(territoryWatchdogListener);
+        geocodeExecutor.shutdown();
     }
 
     private void setupPreviewControls() {
@@ -881,6 +649,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 startTrackingSession();
             }
         });
+        
+        MaterialCardView centerButton = findViewById(R.id.custom_center_button);
+        if (centerButton != null) {
+            centerButton.setOnClickListener(v -> {
+                hasCenteredOnUserLocation = false;
+                centerMapOnCurrentLocation();
+            });
+        }
     }
 
     private void showEndSessionConfirmation() {
@@ -917,11 +693,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (mMap == null) return;
         if (activePathPolyline != null) activePathPolyline.remove();
         
+        // Active path polyline rendered at z-index 2 (slightly above territories but not too high)
         activePathPolyline = mMap.addPolyline(new PolylineOptions()
                 .color(Color.parseColor(currentUserColor))
                 .width(14f)
                 .geodesic(true)
-                .zIndex(10f));
+                .zIndex(2f));
         
         if (sessionRunning) {
             activePathPolyline.setPoints(trackedPath);
@@ -941,6 +718,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
             mMap.setMyLocationEnabled(true);
+            mMap.getUiSettings().setMyLocationButtonEnabled(false); // Disable default button
             centerMapOnCurrentLocation();
         } else {
             ActivityCompat.requestPermissions(this,
@@ -955,6 +733,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST_CODE);
             return;
+        }
+
+        // Clear any leftover claimed area polygon from previous session
+        if (claimedAreaPolygon != null) {
+            claimedAreaPolygon.remove();
+            claimedAreaPolygon = null;
         }
 
         sessionRunning = true;
@@ -1002,7 +786,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
 
         if (isPathClosed()) {
-            double area = drawClaimedAreaPolygon();
+            // Calculate area without drawing a temporary polygon - Firebase will render the actual territory
+            double area = SphericalUtil.computeArea(trackedPath);
             if (area < 1000000.0) {
                 chipArea.setText(String.format(Locale.US, "%.0f m²", area));
             } else {
@@ -1032,19 +817,32 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
         org.locationtech.jts.geom.Polygon newPolyJts = createJtsPolygon(trackedPath);
         if (newPolyJts == null) {
+            // Invalid polygon, save territory as-is
             saveTerritoryToFirebase(trackedPath, area);
             return;
         }
 
+        // Process all existing territories for capture and subtraction
         mDatabase.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                // For each overlapping territory, capture the intersection and assign it to the current player
                 for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
                     Territory other = snapshot.getValue(Territory.class);
                     if (other == null || other.points == null || other.userId.equals(currentUser.getUid())) continue;
-                    subtractAndUpdateTerritory(snapshot.getRef(), other, newPolyJts);
+                    
+                    // Capture and subtract the overlapping portion
+                    captureTerritory(snapshot.getRef(), other, newPolyJts, currentUser);
                 }
+                
+                // Save the original traced path as a new territory for the capturing player
                 saveTerritoryToFirebase(trackedPath, area);
+                
+                // Force re-render after claim to ensure UI is updated
+                if (lastTerritoriesSnapshot != null) {
+                    lastRenderedTerritoryFingerprint = ""; // Reset fingerprint to force re-render
+                    renderTerritories(lastTerritoriesSnapshot);
+                }
             }
             @Override
             public void onCancelled(@NonNull DatabaseError error) {}
@@ -1063,19 +861,23 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
         if (cleanOther.intersects(cleanNew)) {
             try {
+                // Core subtraction logic: cleanOther.difference(cleanNew)
                 Geometry difference = cleanOther.difference(cleanNew);
                 
-                // Fix for Issue 2: Calculate land loss and update victim stats
+                // Calculate land loss and update victim stats
                 double oldArea = other.area;
                 double newArea = 0;
                 
                 if (difference.isEmpty() || difference.getArea() < 1e-10) {
+                    // Territory completely consumed
                     ref.removeValue();
                 } else {
+                    // Territory partially consumed, update with new shape
                     newArea = SphericalUtil.computeArea(geometryToLatLngList(difference));
                     applyGeometryToFirebase(ref, other, difference);
                 }
                 
+                // Update victim's total area claimed stat for leaderboard
                 double loss = oldArea - newArea;
                 if (loss > 0) {
                     FirebaseDatabase.getInstance().getReference("users")
@@ -1084,10 +886,56 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 }
                 
             } catch (Exception e) {
-                Log.e(TAG, "Diff failed", e);
+                Log.e(TAG, "Territory subtraction failed", e);
             }
         }
     }
+
+    private void captureTerritory(DatabaseReference ref, Territory victim, org.locationtech.jts.geom.Polygon capturerPolyJts, FirebaseUser capturer) {
+        List<LatLng> victimPoints = new ArrayList<>();
+        for (Territory.MyLatLng p : victim.points) victimPoints.add(new LatLng(p.latitude, p.longitude));
+        
+        org.locationtech.jts.geom.Polygon victimPolyJts = createJtsPolygon(victimPoints);
+        if (victimPolyJts == null) return;
+
+        Geometry cleanVictim = victimPolyJts.buffer(0);
+        Geometry cleanCapturer = capturerPolyJts.buffer(0);
+
+        if (cleanVictim.intersects(cleanCapturer)) {
+            try {
+                // Calculate the intersection - this is what gets captured
+                Geometry capturedPortion = cleanVictim.intersection(cleanCapturer);
+                
+                // Calculate what remains for the victim
+                Geometry remaining = cleanVictim.difference(cleanCapturer);
+                
+                double oldArea = victim.area;
+                double remainingArea = 0;
+                
+                // Handle what remains for the victim
+                if (remaining.isEmpty() || remaining.getArea() < 1e-10) {
+                    // Victim's territory completely consumed
+                    ref.removeValue();
+                } else {
+                    // Victim loses some territory
+                    remainingArea = SphericalUtil.computeArea(geometryToLatLngList(remaining));
+                    applyGeometryToFirebase(ref, victim, remaining);
+                }
+                
+                // Update victim's total area claimed stat for leaderboard
+                double loss = oldArea - remainingArea;
+                if (loss > 0) {
+                    FirebaseDatabase.getInstance().getReference("users")
+                            .child(victim.userId).child("totalAreaClaimed")
+                            .setValue(ServerValue.increment(-loss));
+                }
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Territory capture failed", e);
+            }
+        }
+    }
+
 
     private List<LatLng> geometryToLatLngList(Geometry geometry) {
         List<LatLng> path = new ArrayList<>();
@@ -1242,9 +1090,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             int stroke = Color.parseColor(color);
             int fill = Color.argb(120, Color.red(stroke), Color.green(stroke), Color.blue(stroke));
             
+            // Claimed area polygon rendered at z-index 1, consistent with other territories
+            // This prevents visual overlap while the subtraction logic processes in the background
             claimedAreaPolygon = mMap.addPolygon(new PolygonOptions().addAll(trackedPath)
                     .strokeColor(stroke).strokeWidth(8f)
-                    .fillColor(fill).zIndex(100f));
+                    .fillColor(fill).zIndex(1f));
         });
 
         return SphericalUtil.computeArea(trackedPath);

@@ -16,4 +16,10 @@
     <color name="surface_variant">#252525</color>
     <color name="stats_blue">#2196F3</color>
     <color name="stats_teal">#00BCD4</color>
+
+    <!-- UI Update missing colors -->
+    <color name="text_hint">#8E8E93</color>
+    <color name="heat_orange">#FF6A00</color>
+    <color name="heat_yellow">#FFD600</color>
+    <color name="heat_red">#FF3B30</color>
 </resources>

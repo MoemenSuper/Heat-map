@@ -4,6 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/dark_background"
     tools:context=".MapActivity">
 
     <androidx.fragment.app.FragmentContainerView
@@ -16,113 +17,150 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/place_search_card"
-        android:layout_width="0dp"
-        android:layout_height="48dp"
-        android:layout_marginStart="76dp"
+    <!-- Left Side Controls (Profile and Leaderboard) -->
+    <LinearLayout
+        android:id="@+id/left_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
         android:layout_marginTop="56dp"
-        android:layout_marginEnd="16dp"
-        app:cardBackgroundColor="@color/card_background"
-        app:cardCornerRadius="24dp"
-        app:cardElevation="4dp"
-        app:layout_constraintEnd_toEndOf="parent"
+        android:gravity="start"
+        android:orientation="vertical"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:strokeColor="@color/brand_blue"
-        app:strokeWidth="1dp">
+        app:layout_constraintTop_toTopOf="parent">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp">
+        <!-- Profile Button -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/profile_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp"
+            app:cardBackgroundColor="#CC1E1E1E"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="6dp"
+            app:strokeColor="#30FFFFFF"
+            app:strokeWidth="1dp">
 
             <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:contentDescription="@string/map_search_icon_desc"
-                android:src="@android:drawable/ic_menu_search"
-                app:tint="@color/text_secondary" />
-
-            <AutoCompleteTextView
-                android:id="@+id/place_search_input"
-                android:layout_width="0dp"
+                android:id="@+id/profile_icon"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:background="@android:color/transparent"
-                android:completionThreshold="2"
-                android:dropDownVerticalOffset="8dp"
-                android:hint="@string/map_search_hint"
-                android:imeOptions="actionSearch"
-                android:inputType="text"
-                android:padding="0dp"
-                android:singleLine="true"
-                android:textColor="@color/white"
-                android:textColorHint="@color/text_secondary"
-                android:textSize="14sp" />
+                android:padding="12dp"
+                android:src="@android:drawable/ic_menu_myplaces"
+                app:tint="@color/heat_orange" />
+        </com.google.android.material.card.MaterialCardView>
 
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+        <!-- Leaderboard Button -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/leaderboard_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            app:cardBackgroundColor="#CC1E1E1E"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="6dp"
+            app:strokeColor="#30FFFFFF"
+            app:strokeWidth="1dp">
 
-    <!-- Top Left Overlay for Leaderboard - Pushed down to avoid status bar -->
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/leaderboard_button"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_marginStart="16dp"
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="12dp"
+                android:src="@android:drawable/btn_star_big_on"
+                app:tint="@color/heat_yellow" />
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+
+    <!-- Right Side Controls (Search and Centralizing) -->
+    <LinearLayout
+        android:id="@+id/right_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="20dp"
         android:layout_marginTop="56dp"
-        app:cardCornerRadius="24dp"
-        app:cardBackgroundColor="@color/card_background"
-        app:strokeColor="@color/brand_blue"
-        app:strokeWidth="2dp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
+        android:gravity="end"
+        android:orientation="vertical"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
 
-        <ImageView
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:padding="10dp"
-            android:src="@android:drawable/btn_star_big_on"
-            app:tint="@color/white" />
-    </com.google.android.material.card.MaterialCardView>
+        <!-- Search Button (Expandable) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/place_search_card"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp"
+            app:cardBackgroundColor="#CCFFFFFF"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="6dp"
+            app:strokeColor="#30000000"
+            app:strokeWidth="1dp">
 
-    <!-- Profile Button (Below Leaderboard) to avoid "My Location" button -->
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/profile_button"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="12dp"
-        app:cardCornerRadius="24dp"
-        app:cardBackgroundColor="@color/card_background"
-        app:strokeColor="@color/brand_blue"
-        app:strokeWidth="2dp"
-        app:layout_constraintTop_toBottomOf="@id/leaderboard_button"
-        app:layout_constraintStart_toStartOf="parent">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp">
 
-        <ImageView
-            android:id="@+id/profile_icon"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:padding="10dp"
-            android:src="@android:drawable/ic_menu_myplaces"
-            app:tint="@color/white" />
-    </com.google.android.material.card.MaterialCardView>
+                <AutoCompleteTextView
+                    android:id="@+id/place_search_input"
+                    android:layout_width="240dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="12dp"
+                    android:background="@android:color/transparent"
+                    android:completionThreshold="2"
+                    android:hint="@string/map_search_hint"
+                    android:imeOptions="actionSearch"
+                    android:inputType="text"
+                    android:padding="0dp"
+                    android:singleLine="true"
+                    android:textColor="#1E1E1E"
+                    android:textColorHint="#881E1E1E"
+                    android:textSize="14sp"
+                    android:visibility="gone" />
 
+                <ImageView
+                    android:id="@+id/search_icon_trigger"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@string/map_search_icon_desc"
+                    android:src="@android:drawable/ic_menu_search"
+                    app:tint="#1E1E1E" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Custom Centralizing (My Location) Button -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/custom_center_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            app:cardBackgroundColor="#CCFFFFFF"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="6dp"
+            app:strokeColor="#30000000"
+            app:strokeWidth="1dp"
+            android:visibility="visible">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="12dp"
+                android:src="@android:drawable/ic_menu_mylocation"
+                app:tint="#1E1E1E" />
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+
+    <!-- Bottom Overlay Card -->
     <LinearLayout
         android:id="@+id/bottom_overlay"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
-        android:layout_marginBottom="20dp"
+        android:layout_marginBottom="24dp"
         android:background="@drawable/map_overlay_card"
         android:orientation="vertical"
-        android:padding="14dp"
+        android:padding="24dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
@@ -130,67 +168,102 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
+            android:gravity="center"
             android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/chip_distance"
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
                 android:layout_weight="1"
-                android:background="@drawable/map_chip_background"
                 android:gravity="center"
-                android:padding="9dp"
-                android:text="0.0 km"
-                android:textColor="#FFFFFFFF"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="DISTANCE"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/chip_distance"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0.00 km"
+                    android:textColor="@color/white"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
-            <TextView
-                android:id="@+id/chip_area"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="3dp"
-                android:layout_marginEnd="3dp"
-                android:layout_weight="1"
-                android:background="@drawable/map_chip_background"
-                android:gravity="center"
-                android:padding="9dp"
-                android:text="0 m2"
-                android:textColor="#FFFFFFFF"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+            <View
+                android:layout_width="1dp"
+                android:layout_height="24dp"
+                android:background="#33FFFFFF" />
 
-            <TextView
-                android:id="@+id/chip_mode"
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
                 android:layout_weight="1"
-                android:background="@drawable/map_chip_background"
                 android:gravity="center"
-                android:padding="9dp"
-                android:text="Preview"
-                android:textColor="#FFFFFFFF"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="TERRITORY"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/chip_area"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0 pts"
+                    android:textColor="@color/white"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="24dp"
+                android:background="#33FFFFFF" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="STATUS"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/chip_mode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Preview"
+                    android:textColor="@color/heat_orange"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
         </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/session_button"
             android:layout_width="match_parent"
-            android:layout_height="54dp"
-            android:layout_marginTop="12dp"
+            android:layout_height="60dp"
+            android:layout_marginTop="24dp"
             android:background="@drawable/map_primary_button"
+            app:backgroundTint="@null"
             android:text="START SESSION"
-            android:textAllCaps="false"
-            android:textColor="#FFFFFFFF"
-            android:textSize="16sp"
+            android:textAllCaps="true"
+            android:textColor="@color/white"
+            android:textSize="18sp"
             android:textStyle="bold"
-            app:iconGravity="textStart"
-            app:strokeWidth="0dp" />
-
+            app:cornerRadius="30dp" />
     </LinearLayout>
 
     <!-- Loading Overlay -->
@@ -198,9 +271,9 @@
         android:id="@+id/loading_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#222222"
-        android:elevation="10dp"
-        android:visibility="visible">
+        android:background="#FF121212"
+        android:elevation="100dp"
+        android:visibility="gone">
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -212,15 +285,16 @@
             <ProgressBar
                 android:layout_width="64dp"
                 android:layout_height="64dp"
-                android:indeterminateTint="@color/brand_blue" />
+                android:indeterminateTint="@color/heat_red" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="Initializing World Map..."
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
+                android:layout_marginTop="24dp"
+                android:text="HEAT MAP"
+                android:textColor="@color/white"
+                android:textSize="24sp"
+                android:letterSpacing="0.2"
                 android:textStyle="bold" />
         </LinearLayout>
     </FrameLayout>
