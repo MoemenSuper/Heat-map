@@ -37,12 +37,17 @@
     <string name="ghost_title_win">Beat Your Record</string>
     <string name="ghost_record_broken">Record beaten this week!</string>
     <string name="mes_empty_title">No sessions yet this month</string>
-    <string name="mes_empty_subtitle">Start a session to begin conquering.</string>
-    <string name="mes_empty_action">Start Session</string>
+    <string name="mes_empty_subtitle">Start a run to begin conquering.</string>
+    <string name="mes_empty_action">Start Run</string>
     <string name="mes_stats_peak">Pic</string>
     <string name="mes_stats_no_data">No data yet</string>
 
     <string name="heat_map_title">HEAT MAP</string>
     <string name="no_account_prompt">Don\'t have an account?&#160;</string>
     <string name="sign_up_caps">SIGN UP</string>
+
+    <string name="start_run">START RUN</string>
+    <string name="stop_run">STOP RUN</string>
+    <string name="summary_title">SUMMARY</string>
+    <string name="close">CLOSE</string>
 </resources>

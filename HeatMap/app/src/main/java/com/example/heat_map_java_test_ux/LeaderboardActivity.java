@@ -96,6 +96,7 @@ public class LeaderboardActivity extends AppCompatActivity {
     // Podium Views
     private View podiumContainer;
     private TextView rank1Name, rank2Name, rank3Name;
+    private CelebrationView celebrationView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -116,6 +117,7 @@ public class LeaderboardActivity extends AppCompatActivity {
         rank1Name = findViewById(R.id.rank1_name);
         rank2Name = findViewById(R.id.rank2_name);
         rank3Name = findViewById(R.id.rank3_name);
+        celebrationView = findViewById(R.id.celebration_view);
         
         setupMesStatsViews();
 
@@ -130,6 +132,7 @@ public class LeaderboardActivity extends AppCompatActivity {
                     leaderboardRecycler.setVisibility(View.GONE);
                     podiumContainer.setVisibility(View.GONE);
                     mesStatsScroll.setVisibility(View.VISIBLE);
+                    if (celebrationView != null) celebrationView.stop();
                     refreshMesStatsUi();
                     return;
                 }
@@ -138,6 +141,7 @@ public class LeaderboardActivity extends AppCompatActivity {
                 mesStatsScroll.setVisibility(View.GONE);
                 leaderboardRecycler.setVisibility(View.VISIBLE);
                 podiumContainer.setVisibility(View.VISIBLE);
+                if (celebrationView != null) celebrationView.start();
                 sortAndDisplay();
             }
             @Override public void onTabUnselected(TabLayout.Tab tab) {}
@@ -166,6 +170,23 @@ public class LeaderboardActivity extends AppCompatActivity {
         if (usersRef != null && usersListener != null) usersRef.removeEventListener(usersListener);
         if (currentUserRef != null && userColorListener != null) currentUserRef.child("territoryColor").removeEventListener(userColorListener);
         if (myTerritoriesQuery != null && territoriesListener != null) myTerritoriesQuery.removeEventListener(territoriesListener);
+        if (celebrationView != null) celebrationView.stop();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (celebrationView != null && !isMesStatsTab) {
+            celebrationView.start();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (celebrationView != null) {
+            celebrationView.stop();
+        }
     }
 
     @Override
@@ -357,8 +378,7 @@ public class LeaderboardActivity extends AppCompatActivity {
     }
 
     private String formatSurface(double areaM2) {
-        if (areaM2 >= 1_000_000d) return String.format(Locale.US, "%.1f km2", areaM2 / 1_000_000d);
-        return String.format(Locale.US, "%.0f m2", areaM2);
+        return String.format(Locale.US, "%.3f km²", areaM2 / 1_000_000.0);
     }
 
     private void sortAndDisplay() {

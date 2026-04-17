@@ -32,13 +32,21 @@
                     android:layout_width="match_parent"
                     android:layout_height="?attr/actionBarSize" />
 
-                <!-- Top 3 Podium -->
+                <!-- Top 3 Podium Area -->
                 <androidx.constraintlayout.widget.ConstraintLayout
                     android:id="@+id/podium_container"
                     android:layout_width="match_parent"
                     android:layout_height="240dp"
                     android:paddingHorizontal="16dp"
                     android:paddingBottom="24dp">
+
+                    <!-- Celebration Animation (Confetti/Sparkles) -->
+                    <com.example.heat_map_java_test_ux.CelebrationView
+                        android:id="@+id/celebration_view"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent" />
 
                     <!-- Rank 2 -->
                     <LinearLayout

@@ -191,8 +191,7 @@ public class ProfileActivity extends AppCompatActivity {
                     }
                 }
             }
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {}
+            @Override public void onCancelled(@NonNull DatabaseError error) {}
         };
 
         mUserRef.addValueEventListener(userProfileListener);
@@ -226,11 +225,8 @@ public class ProfileActivity extends AppCompatActivity {
                 double areaKm2 = totalAreaM2 / 1_000_000.0;
                 double distKm = totalDistanceMeters / 1000.0;
                 
-                if (totalAreaM2 < 1_000_000.0) {
-                    areaStat.setText(String.format(Locale.US, "%.0f m²", totalAreaM2));
-                } else {
-                    areaStat.setText(String.format(Locale.US, "%.1f km²", areaKm2));
-                }
+                // Always display in km² to save space and for better readability as the territory grows
+                areaStat.setText(String.format(Locale.US, "%.3f km²", areaKm2));
                 
                 distanceStat.setText(String.format(Locale.US, "%.1f km", distKm));
                 

@@ -35,6 +35,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
@@ -50,7 +51,6 @@ import com.google.android.gms.maps.model.MapStyleOptions;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.android.gms.tasks.CancellationTokenSource;
@@ -60,14 +60,12 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -100,8 +98,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private static final float PLACE_SEARCH_ZOOM = 10.5f;
     private static final float MAX_LOCATION_ACCURACY_METERS = 35f;
     private static final double MIN_SIGNIFICANT_LAND_LOSS_M2 = 100.0; 
-    private static final double VIEWPORT_RENDER_PADDING_DEGREES = 0.35;
-    private static final long TERRITORY_REDRAW_DEBOUNCE_MS = 180L;
     private static final long TRACKING_POLYLINE_UPDATE_THROTTLE_MS = 550L;
     private static final long TRACKING_CAMERA_UPDATE_THROTTLE_MS = 1800L;
     private static final int PLACE_SEARCH_MIN_QUERY_LENGTH = 2;
@@ -137,7 +133,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private final Handler placeSearchHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService geocodeExecutor = Executors.newSingleThreadExecutor();
     private Runnable pendingSearchRunnable;
-    private Runnable pendingTerritoryRedrawRunnable;
     private int latestPlaceQueryToken = 0;
     private boolean suppressPlaceSearchWatcher = false;
     private long lastPolylineUiUpdateMs = 0L;
@@ -149,7 +144,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private boolean sessionInvalidatedByAntiCheat = false;
     private String antiCheatReason = null;
 
-    // Firebase Listeners (for Issue 7 - Memory Leak Fix)
     private ValueEventListener usersListener;
     private ValueEventListener territoriesListener;
     private ValueEventListener userColorListener;
@@ -203,7 +197,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private final Map<String, String> userNames = new HashMap<>();
     private final Map<String, Double> myTerritoryAreas = new HashMap<>();
     private DataSnapshot lastTerritoriesSnapshot;
-    private String currentUserColor = "#FF5A1F"; // Added to track user color for redraws
+    private String currentUserColor = "#FF5A1F"; 
     private String lastRenderedTerritoryFingerprint = "";
 
     private static class PlaceSuggestion {
@@ -243,7 +237,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         setupPreviewControls();
         setupPlaceSearchControl();
         
-        // Trigger permission checks early
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             checkActivityRecognitionPermission();
         }
@@ -530,7 +523,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         applyMapStyle();
         enableMyLocation();
         
-        // Disable the default compass UI
         mMap.getUiSettings().setCompassEnabled(false);
 
         setupTrackingPathOverlay();
@@ -560,7 +552,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                     }
                 }
                 if (lastTerritoriesSnapshot != null) {
-                    // Force a fingerprint mismatch to update colors immediately
                     lastRenderedTerritoryFingerprint = "";
                     renderTerritories(lastTerritoriesSnapshot);
                 }
@@ -586,7 +577,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private void renderTerritories(DataSnapshot snapshot) {
         if (mMap == null) return;
         
-        // Build a content-based fingerprint that actually reflects territory data changes
         StringBuilder fingerprint = new StringBuilder();
         int count = 0;
         for (DataSnapshot ds : snapshot.getChildren()) {
@@ -602,13 +592,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (currentFingerprint.equals(lastRenderedTerritoryFingerprint)) return;
         lastRenderedTerritoryFingerprint = currentFingerprint;
 
-        // Clear the claimed area polygon - it's no longer needed as the actual territory will now be rendered
         if (claimedAreaPolygon != null) {
             claimedAreaPolygon.remove();
             claimedAreaPolygon = null;
         }
 
-        // Clear and re-render all territories with consistent z-indexing
         for (Polygon p : remotePolygons) p.remove();
         remotePolygons.clear();
 
@@ -623,7 +611,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             int color = Color.parseColor(colorStr);
             int fill = Color.argb(100, Color.red(color), Color.green(color), Color.blue(color));
 
-            // All territories rendered with consistent z-index
             Polygon p = mMap.addPolygon(new PolygonOptions().addAll(pts)
                     .strokeColor(color).strokeWidth(5f)
                     .fillColor(fill).zIndex(1f));
@@ -688,7 +675,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void showEndSessionConfirmation() {
         new MaterialAlertDialogBuilder(this)
-                .setTitle("End Session")
+                .setTitle("End Run")
                 .setMessage("Are you sure you want to end your run? If you have closed a path, your territory will be claimed.")
                 .setPositiveButton("End Run", (dialog, which) -> stopTrackingSession())
                 .setNegativeButton("Keep Going", null)
@@ -710,8 +697,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 }
                 refreshActivePathPolyline();
             }
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {}
+            @Override public void onCancelled(@NonNull DatabaseError error) {}
         };
         mUserRef.child("territoryColor").addValueEventListener(userColorListener);
     }
@@ -720,7 +706,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (mMap == null) return;
         if (activePathPolyline != null) activePathPolyline.remove();
         
-        // Active path polyline rendered at z-index 2 (slightly above territories but not too high)
         activePathPolyline = mMap.addPolyline(new PolylineOptions()
                 .color(Color.parseColor(currentUserColor))
                 .width(14f)
@@ -745,7 +730,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
             mMap.setMyLocationEnabled(true);
-            mMap.getUiSettings().setMyLocationButtonEnabled(false); // Disable default button
+            mMap.getUiSettings().setMyLocationButtonEnabled(false);
             centerMapOnCurrentLocation();
             checkActivityRecognitionPermission();
         } else {
@@ -769,14 +754,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private void startTrackingSession() {
         if (mMap == null) return;
         
-        // Check Location Permission
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST_CODE);
             return;
         }
 
-        // Check Activity Recognition Permission for Step Counting (API 29+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
                     != PackageManager.PERMISSION_GRANTED) {
@@ -785,7 +768,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             }
         }
 
-        // Clear any leftover claimed area polygon from previous session
         if (claimedAreaPolygon != null) {
             claimedAreaPolygon.remove();
             claimedAreaPolygon = null;
@@ -802,7 +784,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         updateTrackingStats();
         activePathPolyline.setPoints(trackedPath);
 
-        sessionButton.setText("STOP SESSION");
+        sessionButton.setText(getString(R.string.stop_run));
         sessionButton.setBackgroundResource(R.drawable.map_primary_button);
 
         Intent serviceIntent = new Intent(this, TrackingService.class);
@@ -816,13 +798,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         Intent serviceIntent = new Intent(this, TrackingService.class);
         stopService(serviceIntent);
 
-        sessionButton.setText("START SESSION");
+        sessionButton.setText(getString(R.string.start_run));
         sessionButton.setBackgroundResource(R.drawable.map_primary_button);
 
         if (activePathPolyline != null) activePathPolyline.setPoints(new ArrayList<>());
 
         if (sessionInvalidatedByAntiCheat) {
-            // fixed by Moemen: anti-cheat cancel should never save a territory
             trackedPath.clear();
             totalDistanceMeters = 0f;
             currentSessionSteps = 0;
@@ -837,23 +818,51 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             return;
         }
 
-        // Sync lifetime stats to Firebase (Steps and Distance)
-        updateUserStats();
+        float sessionDistKm = totalDistanceMeters / 1000f;
+        int sessionSteps = currentSessionSteps;
+        double sessionAreaKm2 = 0;
 
-        double finalArea = 0;
         if (isPathClosed()) {
-            finalArea = SphericalUtil.computeArea(trackedPath);
-            handleTerritoryClaim(finalArea, new ArrayList<>(trackedPath));
+            double finalAreaM2 = SphericalUtil.computeArea(trackedPath);
+            sessionAreaKm2 = finalAreaM2 / 1000000.0;
+            handleTerritoryClaim(finalAreaM2, new ArrayList<>(trackedPath));
         } else {
             Toast.makeText(this, "Path not closed. Move closer to start.", Toast.LENGTH_LONG).show();
         }
 
-        // Reset tracking data and UI stats after session ends
+        updateUserStats();
+        showSessionSummary(sessionDistKm, sessionSteps, sessionAreaKm2);
+
         trackedPath.clear();
         totalDistanceMeters = 0f;
         currentSessionSteps = 0;
         lastAcceptedLocation = null;
         updateTrackingStats();
+    }
+
+    private void showSessionSummary(float distanceKm, int steps, double areaKm2) {
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_session_summary, null);
+        
+        TextView tvDistance = dialogView.findViewById(R.id.summary_distance);
+        TextView tvSteps = dialogView.findViewById(R.id.summary_steps);
+        TextView tvArea = dialogView.findViewById(R.id.summary_area);
+        MaterialButton closeBtn = dialogView.findViewById(R.id.summary_close_button);
+
+        tvDistance.setText(String.format(Locale.US, "%.2f km", distanceKm));
+        tvSteps.setText(String.valueOf(steps));
+        tvArea.setText(String.format(Locale.US, "%.3f km²", areaKm2));
+
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+                .setView(dialogView)
+                .setCancelable(false)
+                .create();
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        }
+
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
     }
 
     private void updateUserStats() {
@@ -871,78 +880,27 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
         org.locationtech.jts.geom.Polygon newPolyJts = createJtsPolygon(sessionPath);
         if (newPolyJts == null) {
-            // Invalid polygon, save territory as-is
             saveTerritoryToFirebase(sessionPath, area);
             return;
         }
 
-        // Process all existing territories for capture and subtraction
         mDatabase.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
-                // For each overlapping territory, capture the intersection and assign it to the current player
                 for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
                     Territory other = snapshot.getValue(Territory.class);
                     if (other == null || other.points == null || other.userId.equals(currentUser.getUid())) continue;
-                    
-                    // Capture and subtract the overlapping portion
                     captureTerritory(snapshot.getRef(), other, newPolyJts, currentUser);
                 }
-                
-                // Save the original traced path as a new territory for the capturing player
                 saveTerritoryToFirebase(sessionPath, area);
-                
-                // Force re-render after claim to ensure UI is updated
                 if (lastTerritoriesSnapshot != null) {
-                    lastRenderedTerritoryFingerprint = ""; // Reset fingerprint to force re-render
+                    lastRenderedTerritoryFingerprint = ""; 
                     renderTerritories(lastTerritoriesSnapshot);
                 }
             }
             @Override
             public void onCancelled(@NonNull DatabaseError error) {}
         });
-    }
-
-    private void subtractAndUpdateTerritory(DatabaseReference ref, Territory other, org.locationtech.jts.geom.Polygon newPolyJts) {
-        List<LatLng> otherPoints = new ArrayList<>();
-        for (Territory.MyLatLng p : other.points) otherPoints.add(new LatLng(p.latitude, p.longitude));
-        
-        org.locationtech.jts.geom.Polygon otherPolyJts = createJtsPolygon(otherPoints);
-        if (otherPolyJts == null) return;
-
-        Geometry cleanOther = otherPolyJts.buffer(0);
-        Geometry cleanNew = newPolyJts.buffer(0);
-
-        if (cleanOther.intersects(cleanNew)) {
-            try {
-                // Core subtraction logic: cleanOther.difference(cleanNew)
-                Geometry difference = cleanOther.difference(cleanNew);
-                
-                // Calculate land loss and update victim stats
-                double oldArea = other.area;
-                double newArea = 0;
-                
-                if (difference.isEmpty() || difference.getArea() < 1e-10) {
-                    // Territory completely consumed
-                    ref.removeValue();
-                } else {
-                    // Territory partially consumed, update with new shape
-                    newArea = SphericalUtil.computeArea(geometryToLatLngList(difference));
-                    applyGeometryToFirebase(ref, other, difference);
-                }
-                
-                // Update victim's total area claimed stat for leaderboard
-                double loss = oldArea - newArea;
-                if (loss > 0) {
-                    FirebaseDatabase.getInstance().getReference("users")
-                            .child(other.userId).child("totalAreaClaimed")
-                            .setValue(ServerValue.increment(-loss));
-                }
-                
-            } catch (Exception e) {
-                Log.e(TAG, "Territory subtraction failed", e);
-            }
-        }
     }
 
     private void captureTerritory(DatabaseReference ref, Territory victim, org.locationtech.jts.geom.Polygon capturerPolyJts, FirebaseUser capturer) {
@@ -957,33 +915,23 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
         if (cleanVictim.intersects(cleanCapturer)) {
             try {
-                // Calculate the intersection - this is what gets captured
-                Geometry capturedPortion = cleanVictim.intersection(cleanCapturer);
-                
-                // Calculate what remains for the victim
                 Geometry remaining = cleanVictim.difference(cleanCapturer);
-                
                 double oldArea = victim.area;
                 double remainingArea = 0;
                 
-                // Handle what remains for the victim
                 if (remaining.isEmpty() || remaining.getArea() < 1e-10) {
-                    // Victim's territory completely consumed
                     ref.removeValue();
                 } else {
-                    // Victim loses some territory
                     remainingArea = SphericalUtil.computeArea(geometryToLatLngList(remaining));
                     applyGeometryToFirebase(ref, victim, remaining);
                 }
                 
-                // Update victim's total area claimed stat for leaderboard
                 double loss = oldArea - remainingArea;
                 if (loss > 0) {
                     FirebaseDatabase.getInstance().getReference("users")
                             .child(victim.userId).child("totalAreaClaimed")
                             .setValue(ServerValue.increment(-loss));
                 }
-                
             } catch (Exception e) {
                 Log.e(TAG, "Territory capture failed", e);
             }
@@ -1035,12 +983,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         mDatabase.push().setValue(new Territory(userId, email, points, area, System.currentTimeMillis()));
     }
 
-    private org.locationtech.jts.geom.Polygon createJtsPolygonFromMyLatLng(List<Territory.MyLatLng> points) {
-        List<LatLng> latLngs = new ArrayList<>();
-        for (Territory.MyLatLng p : points) latLngs.add(new LatLng(p.latitude, p.longitude));
-        return createJtsPolygon(latLngs);
-    }
-
     private org.locationtech.jts.geom.Polygon createJtsPolygon(List<LatLng> path) {
         if (path.size() < 3) return null;
         List<Coordinate> coordsList = new ArrayList<>();
@@ -1079,8 +1021,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         for (LatLng l : path) pts.add(new Territory.MyLatLng(l.latitude, l.longitude));
         
         mDatabase.push().setValue(new Territory(user.getUid(), user.getEmail(), pts, area, System.currentTimeMillis()));
-        
-        // Fix for Issue 1: Update the user's totalAreaClaimed stat for the leaderboard
         mUserRef.child("totalAreaClaimed").setValue(ServerValue.increment(area));
     }
 
@@ -1094,7 +1034,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         
         runOnUiThread(() -> {
             long nowMs = SystemClock.uptimeMillis();
-
             boolean shouldUpdatePolyline = trackedPath.size() <= 3
                     || (nowMs - lastPolylineUiUpdateMs) >= TRACKING_POLYLINE_UPDATE_THROTTLE_MS;
             if (activePathPolyline != null && shouldUpdatePolyline) {
@@ -1103,7 +1042,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             }
             updateTrackingStats();
             
-            // fixed by Moemen: follow during a run only while follow mode is enabled
             boolean shouldUpdateCamera = !hasCenteredOnUserLocation
                     || (nowMs - lastCameraUiUpdateMs) >= TRACKING_CAMERA_UPDATE_THROTTLE_MS;
             if (((sessionRunning && followUserCamera) || !hasCenteredOnUserLocation) && shouldUpdateCamera) {
@@ -1115,7 +1053,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void updateTrackingStats() {
         chipDistance.setText(String.format(Locale.US, "%.2f km", totalDistanceMeters / 1000f));
-        chipArea.setText(String.format(Locale.US, "%.0f m²", SphericalUtil.computeArea(trackedPath)));
+        chipArea.setText(String.format(Locale.US, "%.3f km²", SphericalUtil.computeArea(trackedPath) / 1000000.0));
         if (!sessionRunning) {
             chipSteps.setText("0");
         }
@@ -1136,25 +1074,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private boolean isPathClosed() {
         if (trackedPath.size() < 3) return false;
         return SphericalUtil.computeDistanceBetween(trackedPath.get(0), trackedPath.get(trackedPath.size()-1)) <= CLOSE_PATH_RADIUS_METERS;
-    }
-
-    private double drawClaimedAreaPolygon() {
-        if (claimedAreaPolygon != null) claimedAreaPolygon.remove();
-        
-        mUserRef.child("territoryColor").get().addOnSuccessListener(snapshot -> {
-            String color = "#FF5A1F";
-            if (snapshot.exists()) color = snapshot.getValue(String.class);
-            int stroke = Color.parseColor(color);
-            int fill = Color.argb(120, Color.red(stroke), Color.green(stroke), Color.blue(stroke));
-            
-            // Claimed area polygon rendered at z-index 1, consistent with other territories
-            // This prevents visual overlap while the subtraction logic processes in the background
-            claimedAreaPolygon = mMap.addPolygon(new PolygonOptions().addAll(trackedPath)
-                    .strokeColor(stroke).strokeWidth(8f)
-                    .fillColor(fill).zIndex(1f));
-        });
-
-        return SphericalUtil.computeArea(trackedPath);
     }
 
     @Override

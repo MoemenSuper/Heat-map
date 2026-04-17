@@ -217,7 +217,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="0"
-                    android:textColor="@color/heat_orange"
+                    android:textColor="@color/white"
                     android:textSize="18sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -244,7 +244,7 @@
                     android:id="@+id/chip_area"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0 m²"
+                    android:text="0.000 km²"
                     android:textColor="@color/white"
                     android:textSize="18sp"
                     android:textStyle="bold" />
@@ -258,7 +258,7 @@
             android:layout_marginTop="24dp"
             android:background="@drawable/map_primary_button"
             app:backgroundTint="@null"
-            android:text="START SESSION"
+            android:text="@string/start_run"
             android:textAllCaps="true"
             android:textColor="@color/white"
             android:textSize="18sp"
