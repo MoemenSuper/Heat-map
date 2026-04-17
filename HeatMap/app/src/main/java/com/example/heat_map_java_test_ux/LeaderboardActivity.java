@@ -126,6 +126,7 @@ public class LeaderboardActivity extends AppCompatActivity {
 
     // Podium Views
     private View podiumContainer;
+    private View rank1Container, rank2Container, rank3Container;
     private TextView rank1Name, rank2Name, rank3Name;
 
     @Override
@@ -144,6 +145,9 @@ public class LeaderboardActivity extends AppCompatActivity {
 
         mesStatsScroll = findViewById(R.id.mes_stats_scroll);
         podiumContainer = findViewById(R.id.podium_container);
+        rank1Container = findViewById(R.id.rank1_container);
+        rank2Container = findViewById(R.id.rank2_container);
+        rank3Container = findViewById(R.id.rank3_container);
         rank1Name = findViewById(R.id.rank1_name);
         rank2Name = findViewById(R.id.rank2_name);
         rank3Name = findViewById(R.id.rank3_name);
@@ -168,6 +172,7 @@ public class LeaderboardActivity extends AppCompatActivity {
                 mesStatsScroll.setVisibility(View.GONE);
                 leaderboardRecycler.setVisibility(View.VISIBLE);
                 podiumContainer.setVisibility(View.VISIBLE);
+                animatePodium(); // Re-animate when switching back to rankings
 
                 sortByTerritory = position == 0;
                 sortAndDisplay();
@@ -192,6 +197,46 @@ public class LeaderboardActivity extends AppCompatActivity {
         }
 
         fetchUsers();
+        animatePodium();
+    }
+
+    private void animatePodium() {
+        if (rank1Container == null || rank2Container == null || rank3Container == null) return;
+
+        // Set initial state
+        rank1Container.setTranslationY(200f);
+        rank1Container.setAlpha(0f);
+        rank2Container.setTranslationY(200f);
+        rank2Container.setAlpha(0f);
+        rank3Container.setTranslationY(200f);
+        rank3Container.setAlpha(0f);
+
+        // Animate Rank 2 first (left)
+        rank2Container.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setDuration(600)
+                .setStartDelay(100)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
+
+        // Animate Rank 3 (right)
+        rank3Container.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setDuration(600)
+                .setStartDelay(200)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
+
+        // Animate Rank 1 last (middle, hero)
+        rank1Container.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setDuration(700)
+                .setStartDelay(400)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
     }
 
     @Override
