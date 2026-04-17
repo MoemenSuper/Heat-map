@@ -512,6 +512,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         mMap = googleMap;
         applyMapStyle();
         enableMyLocation();
+        
+        // Disable the default compass UI
+        mMap.getUiSettings().setCompassEnabled(false);
+
         setupTrackingPathOverlay();
         loadInitialData();
         setupTerritoryWatchdog();

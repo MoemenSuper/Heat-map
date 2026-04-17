@@ -97,7 +97,7 @@ public class ProfileActivity extends AppCompatActivity {
             usernameContainer.setOnClickListener(null);
             findViewById(R.id.edit_username_hint).setVisibility(View.GONE);
             findViewById(R.id.color_label).setVisibility(View.GONE);
-            findViewById(R.id.color_picker_scroll).setVisibility(View.GONE);
+            findViewById(R.id.color_custom).setVisibility(View.GONE);
             findViewById(R.id.logout_button).setVisibility(View.GONE);
         } else {
             usernameContainer.setOnClickListener(v -> showEditUsernameDialog());
@@ -115,13 +115,6 @@ public class ProfileActivity extends AppCompatActivity {
     }
 
     private void setupColorPickers() {
-        findViewById(R.id.color_orange).setOnClickListener(v -> updateTerritoryColor("#FF5A1F"));
-        findViewById(R.id.color_blue).setOnClickListener(v -> updateTerritoryColor("#007AFF"));
-        findViewById(R.id.color_green).setOnClickListener(v -> updateTerritoryColor("#4CAF50"));
-        findViewById(R.id.color_purple).setOnClickListener(v -> updateTerritoryColor("#9C27B0"));
-        findViewById(R.id.color_pink).setOnClickListener(v -> updateTerritoryColor("#E91E63"));
-        findViewById(R.id.color_cyan).setOnClickListener(v -> updateTerritoryColor("#00BCD4"));
-        
         findViewById(R.id.color_custom).setOnClickListener(v -> {
             new ColorPickerDialog.Builder(this)
                     .setTitle("Pick Color")
@@ -149,42 +142,15 @@ public class ProfileActivity extends AppCompatActivity {
     }
 
     private void updateColorSelectionUI(String selectedColor) {
-        // Only show selection borders if it's the current user's profile
         if (getIntent().getStringExtra("USER_ID") != null) return;
 
-        int[] ids = {R.id.color_orange, R.id.color_blue, R.id.color_green, 
-                     R.id.color_purple, R.id.color_pink, R.id.color_cyan, R.id.color_custom};
-        
-        for (int id : ids) {
-            View view = findViewById(id);
-            if (view instanceof MaterialCardView) {
-                ((MaterialCardView) view).setStrokeWidth(0);
-                // Reset the custom card's background to default gray if we are iterating
-                if (id == R.id.color_custom) {
-                    ((MaterialCardView) view).setCardBackgroundColor(Color.parseColor("#3A3A3A")); // Using a surface-like color
-                }
+        View previewBox = findViewById(R.id.color_preview_box);
+        if (previewBox != null && selectedColor != null) {
+            try {
+                previewBox.setBackgroundColor(Color.parseColor(selectedColor));
+            } catch (Exception e) {
+                Log.e(TAG, "Error parsing color: " + selectedColor);
             }
-        }
-
-        View selectedView = null;
-        if (selectedColor.equalsIgnoreCase("#FF5A1F")) selectedView = findViewById(R.id.color_orange);
-        else if (selectedColor.equalsIgnoreCase("#007AFF")) selectedView = findViewById(R.id.color_blue);
-        else if (selectedColor.equalsIgnoreCase("#4CAF50")) selectedView = findViewById(R.id.color_green);
-        else if (selectedColor.equalsIgnoreCase("#9C27B0")) selectedView = findViewById(R.id.color_purple);
-        else if (selectedColor.equalsIgnoreCase("#E91E63")) selectedView = findViewById(R.id.color_pink);
-        else if (selectedColor.equalsIgnoreCase("#00BCD4")) selectedView = findViewById(R.id.color_cyan);
-        else {
-            selectedView = findViewById(R.id.color_custom);
-            // Dynamic Fix: Update the background of the custom card to the picked color
-            if (selectedView instanceof MaterialCardView) {
-                ((MaterialCardView) selectedView).setCardBackgroundColor(Color.parseColor(selectedColor));
-            }
-        }
-
-        if (selectedView instanceof MaterialCardView) {
-            ((MaterialCardView) selectedView).setStrokeWidth(4);
-            // Ensure stroke is visible (white for contrast)
-            ((MaterialCardView) selectedView).setStrokeColor(Color.WHITE);
         }
     }
 
@@ -278,7 +244,6 @@ public class ProfileActivity extends AppCompatActivity {
     protected void onStop() {
         super.onStop();
         if (mUserRef != null && userProfileListener != null) {
-            // added by Moemen: avoid stacking profile listeners on repeated screen opens
             mUserRef.removeEventListener(userProfileListener);
         }
         if (mTerritoryRef != null && territoryStatsListener != null) {
@@ -287,14 +252,15 @@ public class ProfileActivity extends AppCompatActivity {
     }
 
     private void updateAwards(double areaKm2, double distKm) {
-        if (distKm >= 0.5) unlockAward(cardNovice, iconNovice, "#FFD700");
-        if (areaKm2 >= 0.005) unlockAward(cardExplorer, iconExplorer, "#00BFFF");
-        if (distKm >= 5.0) unlockAward(cardMaster, iconMaster, "#FF4500");
+        String greenHex = "#4CAF50";
+        if (distKm >= 0.5) unlockAward(cardNovice, iconNovice, greenHex);
+        if (areaKm2 >= 0.005) unlockAward(cardExplorer, iconExplorer, greenHex);
+        if (distKm >= 5.0) unlockAward(cardMaster, iconMaster, greenHex);
     }
 
     private void unlockAward(MaterialCardView card, android.widget.ImageView icon, String colorHex) {
         card.setStrokeColor(android.graphics.Color.parseColor(colorHex));
         icon.setColorFilter(android.graphics.Color.parseColor(colorHex));
-        card.setCardBackgroundColor(android.graphics.Color.parseColor("#3A3A3A"));
+        card.setCardBackgroundColor(android.graphics.Color.parseColor("#1E1E1E"));
     }
 }
