@@ -203,6 +203,8 @@ public class ProfileActivity extends AppCompatActivity {
             mTerritoryRef.removeEventListener(territoryStatsListener);
         }
 
+        TextView stepsStat = findViewById(R.id.stat_steps_value);
+
         territoryStatsListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -231,6 +233,18 @@ public class ProfileActivity extends AppCompatActivity {
                 }
                 
                 distanceStat.setText(String.format(Locale.US, "%.1f km", distKm));
+                
+                // Load steps from user profile instead of territories
+                mUserRef.child("totalSteps").get().addOnSuccessListener(userSnapshot -> {
+                    long steps = 0;
+                    if (userSnapshot.exists()) {
+                        Object val = userSnapshot.getValue();
+                        if (val instanceof Long) steps = (Long) val;
+                        else if (val instanceof Double) steps = ((Double) val).longValue();
+                    }
+                    if (stepsStat != null) stepsStat.setText(String.valueOf(steps));
+                });
+
                 updateAwards(areaKm2, distKm);
             }
             @Override

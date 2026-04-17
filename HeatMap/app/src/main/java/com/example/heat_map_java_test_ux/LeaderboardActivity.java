@@ -101,7 +101,7 @@ public class LeaderboardActivity extends AppCompatActivity {
     private String currentUserColorHex = "#FF5A1F";
 
     private ProgressBar progressBar;
-    private boolean sortByTerritory = true;
+    private int selectedTabIndex = 0;
     private boolean isMesStatsTab = false;
 
     private View mesStatsScroll;
@@ -159,7 +159,8 @@ public class LeaderboardActivity extends AppCompatActivity {
             @Override
             public void onTabSelected(TabLayout.Tab tab) {
                 int position = tab.getPosition();
-                if (position == 2) {
+                selectedTabIndex = position;
+                if (position == 3) {
                     isMesStatsTab = true;
                     leaderboardRecycler.setVisibility(View.GONE);
                     podiumContainer.setVisibility(View.GONE);
@@ -174,7 +175,6 @@ public class LeaderboardActivity extends AppCompatActivity {
                 podiumContainer.setVisibility(View.VISIBLE);
                 animatePodium(); // Re-animate when switching back to rankings
 
-                sortByTerritory = position == 0;
                 sortAndDisplay();
             }
             @Override
@@ -236,7 +236,36 @@ public class LeaderboardActivity extends AppCompatActivity {
                 .setDuration(700)
                 .setStartDelay(400)
                 .setInterpolator(new DecelerateInterpolator())
+                .withEndAction(this::checkIfUserCelebration)
                 .start();
+    }
+
+    private void checkIfUserCelebration() {
+        if (userList.isEmpty() || currentUserId == null) return;
+        
+        boolean isTop3 = false;
+        for (int i = 0; i < Math.min(3, userList.size()); i++) {
+            if (currentUserId.equals(userList.get(i).userId)) {
+                isTop3 = true;
+                break;
+            }
+        }
+
+        if (isTop3) {
+            // Celebrate with a scale pulse
+            podiumContainer.animate()
+                    .scaleX(1.1f)
+                    .scaleY(1.1f)
+                    .setDuration(400)
+                    .setInterpolator(new DecelerateInterpolator())
+                    .withEndAction(() -> {
+                        podiumContainer.animate()
+                                .scaleX(1.0f)
+                                .scaleY(1.0f)
+                                .setDuration(300)
+                                .start();
+                    }).start();
+        }
     }
 
     @Override
@@ -441,10 +470,12 @@ public class LeaderboardActivity extends AppCompatActivity {
     }
 
     private void sortAndDisplay() {
-        if (sortByTerritory) {
+        if (selectedTabIndex == 0) {
             Collections.sort(userList, (u1, u2) -> Double.compare(u2.totalAreaClaimed, u1.totalAreaClaimed));
-        } else {
+        } else if (selectedTabIndex == 1) {
             Collections.sort(userList, (u1, u2) -> Double.compare(u2.totalDistanceWalked, u1.totalDistanceWalked));
+        } else if (selectedTabIndex == 2) {
+            Collections.sort(userList, (u1, u2) -> Long.compare(u2.totalSteps, u1.totalSteps));
         }
 
         // Update Podium
@@ -469,13 +500,44 @@ public class LeaderboardActivity extends AppCompatActivity {
         @Override
         public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
             User user = users.get(position);
-            holder.rank.setText(String.valueOf(position + 1));
+            int rankNum = position + 1;
+            holder.rank.setText(String.valueOf(rankNum));
             holder.name.setText(user.username != null ? user.username : "Anonymous");
-            
-            if (sortByTerritory) {
-                holder.value.setText(formatSurface(user.totalAreaClaimed));
+
+            // Style top 3 items in the list
+            if (rankNum == 1) {
+                holder.rankContainer.setCardBackgroundColor(Color.parseColor("#FFD700"));
+                holder.rank.setTextColor(Color.BLACK);
+            } else if (rankNum == 2) {
+                holder.rankContainer.setCardBackgroundColor(Color.parseColor("#C0C0C0"));
+                holder.rank.setTextColor(Color.BLACK);
+            } else if (rankNum == 3) {
+                holder.rankContainer.setCardBackgroundColor(Color.parseColor("#CD7F32"));
+                holder.rank.setTextColor(Color.BLACK);
             } else {
+                holder.rankContainer.setCardBackgroundColor(Color.parseColor("#2A2A2A"));
+                holder.rank.setTextColor(Color.WHITE);
+            }
+
+            // Highlight current user
+            if (user.userId != null && user.userId.equals(currentUserId)) {
+                ((MaterialCardView)holder.itemView).setStrokeColor(Color.parseColor("#FF5A1F"));
+                ((MaterialCardView)holder.itemView).setStrokeWidth(4);
+                holder.itemView.setScaleX(1.02f);
+                holder.itemView.setScaleY(1.02f);
+            } else {
+                ((MaterialCardView)holder.itemView).setStrokeColor(Color.parseColor("#1AFFFFFF"));
+                ((MaterialCardView)holder.itemView).setStrokeWidth(2);
+                holder.itemView.setScaleX(1.0f);
+                holder.itemView.setScaleY(1.0f);
+            }
+
+            if (selectedTabIndex == 0) {
+                holder.value.setText(formatSurface(user.totalAreaClaimed));
+            } else if (selectedTabIndex == 1) {
                 holder.value.setText(String.format(Locale.US, "%.1f km", user.totalDistanceWalked / 1000.0));
+            } else if (selectedTabIndex == 2) {
+                holder.value.setText(String.format(Locale.US, "%,d steps", user.totalSteps));
             }
 
             holder.itemView.setOnClickListener(v -> {
@@ -491,11 +553,13 @@ public class LeaderboardActivity extends AppCompatActivity {
 
         class ViewHolder extends RecyclerView.ViewHolder {
             TextView rank, name, value;
+            MaterialCardView rankContainer;
             ViewHolder(View itemView) {
                 super(itemView);
                 rank = itemView.findViewById(R.id.rank_text);
                 name = itemView.findViewById(R.id.username_text);
                 value = itemView.findViewById(R.id.value_text);
+                rankContainer = itemView.findViewById(R.id.rank_container);
             }
         }
     }

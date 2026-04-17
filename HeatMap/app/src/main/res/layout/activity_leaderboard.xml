@@ -11,36 +11,26 @@
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@android:color/transparent"
+        android:background="@color/dark_background"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.CollapsingToolbarLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:layout_scrollFlags="scroll|exitUntilCollapsed">
+            app:contentScrim="@color/dark_background"
+            app:layout_scrollFlags="scroll|exitUntilCollapsed"
+            app:toolbarId="@+id/toolbar">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                app:layout_collapseMode="parallax">
 
-                <androidx.appcompat.widget.Toolbar
-                    android:id="@+id/toolbar"
+                <!-- Spacer for the pinned toolbar -->
+                <View
                     android:layout_width="match_parent"
-                    android:layout_height="?attr/actionBarSize"
-                    app:navigationIcon="@android:drawable/ic_menu_revert"
-                    app:navigationIconTint="@color/white">
-
-                    <TextView
-                        android:id="@+id/toolbar_title"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="LEADERBOARD"
-                        android:textColor="@color/white"
-                        android:textSize="14sp"
-                        android:letterSpacing="0.1"
-                        android:textStyle="bold" />
-                </androidx.appcompat.widget.Toolbar>
+                    android:layout_height="?attr/actionBarSize" />
 
                 <!-- Top 3 Podium -->
                 <androidx.constraintlayout.widget.ConstraintLayout
@@ -185,6 +175,26 @@
                 </androidx.constraintlayout.widget.ConstraintLayout>
 
             </LinearLayout>
+
+            <androidx.appcompat.widget.Toolbar
+                android:id="@+id/toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="?attr/actionBarSize"
+                app:layout_collapseMode="pin"
+                app:navigationIcon="@android:drawable/ic_menu_revert"
+                app:navigationIconTint="@color/white">
+
+                <TextView
+                    android:id="@+id/toolbar_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="LEADERBOARD"
+                    android:textColor="@color/white"
+                    android:textSize="14sp"
+                    android:letterSpacing="0.1"
+                    android:textStyle="bold" />
+            </androidx.appcompat.widget.Toolbar>
+
         </com.google.android.material.appbar.CollapsingToolbarLayout>
 
         <com.google.android.material.tabs.TabLayout
@@ -207,6 +217,11 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="DISTANCE" />
+
+            <com.google.android.material.tabs.TabItem
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="STEPS" />
 
             <com.google.android.material.tabs.TabItem
                 android:layout_width="wrap_content"

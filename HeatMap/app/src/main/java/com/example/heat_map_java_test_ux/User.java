@@ -6,6 +6,7 @@ public class User {
     public String email;
     public double totalDistanceWalked;
     public double totalAreaClaimed;
+    public long totalSteps;
     public String territoryColor; // Hex string, e.g., "#FF5A1F"
 
     public User() {

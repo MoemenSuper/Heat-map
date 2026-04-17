@@ -122,6 +122,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private TextView chipSteps;
     private TextView chipDistance;
     private TextView chipArea;
+    private TextView syncStatus;
     private MaterialButton sessionButton;
     private FrameLayout loadingOverlay;
     private AutoCompleteTextView placeSearchInput;
@@ -216,10 +217,29 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
     }
 
+    private MaterialCardView sessionResultsCard;
+    private TextView resultArea, resultDistance, resultSteps;
+    private MaterialButton closeResultsButton;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_map);
+        
+        sessionResultsCard = findViewById(R.id.session_results_card);
+        resultArea = findViewById(R.id.result_area);
+        resultDistance = findViewById(R.id.result_distance);
+        resultSteps = findViewById(R.id.result_steps);
+        closeResultsButton = findViewById(R.id.close_results_button);
+        syncStatus = findViewById(R.id.sync_status);
+
+        setupSyncStatusWatcher();
+        
+        if (closeResultsButton != null) {
+            closeResultsButton.setOnClickListener(v -> {
+                sessionResultsCard.setVisibility(View.GONE);
+            });
+        }
         
         createLandTakeoverNotificationChannel();
         loadingOverlay = findViewById(R.id.loading_overlay);
@@ -545,7 +565,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     private void loadInitialData() {
-        mAllUsersRef.addValueEventListener(new ValueEventListener() {
+        usersListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 userColors.clear();
@@ -559,12 +579,17 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                         if (name != null) userNames.put(uid, name);
                     }
                 }
-                if (lastTerritoriesSnapshot != null) renderTerritories(lastTerritoriesSnapshot);
+                if (lastTerritoriesSnapshot != null) {
+                    // Force a fingerprint mismatch to update colors immediately
+                    lastRenderedTerritoryFingerprint = "";
+                    renderTerritories(lastTerritoriesSnapshot);
+                }
             }
             @Override public void onCancelled(@NonNull DatabaseError e) {}
-        });
+        };
+        mAllUsersRef.addValueEventListener(usersListener);
 
-        mDatabase.addValueEventListener(new ValueEventListener() {
+        territoriesListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 lastTerritoriesSnapshot = snapshot;
@@ -574,7 +599,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 }
             }
             @Override public void onCancelled(@NonNull DatabaseError e) {}
-        });
+        };
+        mDatabase.addValueEventListener(territoriesListener);
     }
 
     private void renderTerritories(DataSnapshot snapshot) {
@@ -590,7 +616,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 count++;
             }
         }
-        fingerprint.append(count).append("_").append(userColors.size());
+        fingerprint.append(count).append("_").append(userColors.hashCode());
         
         String currentFingerprint = fingerprint.toString();
         if (currentFingerprint.equals(lastRenderedTerritoryFingerprint)) return;
@@ -797,6 +823,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         activePathPolyline.setPoints(trackedPath);
 
         sessionButton.setText("STOP SESSION");
+        sessionButton.setBackgroundResource(R.drawable.map_stop_button);
 
         Intent serviceIntent = new Intent(this, TrackingService.class);
         ContextCompat.startForegroundService(this, serviceIntent);
@@ -810,6 +837,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         stopService(serviceIntent);
 
         sessionButton.setText("START SESSION");
+        sessionButton.setBackgroundResource(R.drawable.map_primary_button);
 
         if (activePathPolyline != null) activePathPolyline.setPoints(new ArrayList<>());
 
@@ -817,6 +845,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             // fixed by Moemen: anti-cheat cancel should never save a territory
             trackedPath.clear();
             totalDistanceMeters = 0f;
+            currentSessionSteps = 0;
             lastAcceptedLocation = null;
             updateTrackingStats();
 
@@ -828,14 +857,19 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             return;
         }
 
+        // Sync lifetime stats to Firebase (Steps and Distance)
+        updateUserStats();
+
+        double finalArea = 0;
         if (isPathClosed()) {
-            // Calculate area without drawing a temporary polygon - Firebase will render the actual territory
-            double area = SphericalUtil.computeArea(trackedPath);
-            handleTerritoryClaim(area);
-            updateUserStats();
+            finalArea = SphericalUtil.computeArea(trackedPath);
+            handleTerritoryClaim(finalArea, new ArrayList<>(trackedPath));
         } else {
             Toast.makeText(this, "Path not closed. Move closer to start.", Toast.LENGTH_LONG).show();
         }
+
+        // Show Results Popup
+        showSessionResults(finalArea, totalDistanceMeters, currentSessionSteps);
 
         // Reset tracking data and UI stats after session ends
         trackedPath.clear();
@@ -846,30 +880,22 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     private void updateUserStats() {
-        mUserRef.get().addOnSuccessListener(snapshot -> {
-            double currentDist = 0;
-            long currentSteps = 0;
-            if (snapshot.exists()) {
-                Double distVal = snapshot.child("totalDistanceWalked").getValue(Double.class);
-                Long stepVal = snapshot.child("totalSteps").getValue(Long.class);
-                if (distVal != null) currentDist = distVal;
-                if (stepVal != null) currentSteps = stepVal;
-            }
-            Map<String, Object> updates = new HashMap<>();
-            updates.put("totalDistanceWalked", currentDist + totalDistanceMeters);
-            updates.put("totalSteps", currentSteps + currentSessionSteps);
-            mUserRef.updateChildren(updates);
-        });
+        if (totalDistanceMeters <= 0 && currentSessionSteps <= 0) return;
+
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("totalDistanceWalked", ServerValue.increment(totalDistanceMeters));
+        updates.put("totalSteps", ServerValue.increment(currentSessionSteps));
+        mUserRef.updateChildren(updates);
     }
 
-    private void handleTerritoryClaim(double area) {
+    private void handleTerritoryClaim(double area, List<LatLng> sessionPath) {
         FirebaseUser currentUser = mAuth.getCurrentUser();
         if (currentUser == null) return;
 
-        org.locationtech.jts.geom.Polygon newPolyJts = createJtsPolygon(trackedPath);
+        org.locationtech.jts.geom.Polygon newPolyJts = createJtsPolygon(sessionPath);
         if (newPolyJts == null) {
             // Invalid polygon, save territory as-is
-            saveTerritoryToFirebase(trackedPath, area);
+            saveTerritoryToFirebase(sessionPath, area);
             return;
         }
 
@@ -887,7 +913,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 }
                 
                 // Save the original traced path as a new territory for the capturing player
-                saveTerritoryToFirebase(trackedPath, area);
+                saveTerritoryToFirebase(sessionPath, area);
                 
                 // Force re-render after claim to ensure UI is updated
                 if (lastTerritoriesSnapshot != null) {
