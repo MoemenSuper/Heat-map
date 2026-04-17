@@ -8,6 +8,10 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.location.Location;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Binder;
 import android.os.Build;
 import android.os.HandlerThread;
@@ -31,7 +35,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 
-public class TrackingService extends Service {
+public class TrackingService extends Service implements SensorEventListener {
     private static final String TAG = "TrackingService";
     private static final String CHANNEL_ID = "TrackingServiceChannel";
     private static final int NOTIFICATION_ID = 12345;
@@ -53,6 +57,11 @@ public class TrackingService extends Service {
     private static final float MIN_SESSION_DISTANCE_FOR_BLOCK_M = 180f;
     
     private FusedLocationProviderClient fusedLocationClient;
+    private SensorManager sensorManager;
+    private Sensor stepSensor;
+    private int startSteps = -1;
+    private int currentSessionSteps = 0;
+
     private LocationCallback locationCallback;
     private HandlerThread locationThread;
     private final IBinder binder = new LocalBinder();
@@ -70,6 +79,7 @@ public class TrackingService extends Service {
 
     public interface LocationUpdateListener {
         void onLocationUpdate(Location location);
+        void onStepsUpdate(int steps);
         void onCheatingDetected(String reason);
     }
     
@@ -85,6 +95,9 @@ public class TrackingService extends Service {
     public void onCreate() {
         super.onCreate();
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+
         createNotificationChannel();
         resetDetectionState();
 
@@ -114,6 +127,8 @@ public class TrackingService extends Service {
         lastRawTimeMs = -1L;
         sessionStartMs = -1L;
         sessionDistanceMeters = 0f;
+        startSteps = -1;
+        currentSessionSteps = 0;
 
         vehicleScore = 0f;
         highSpeedStreak = 0;
@@ -328,6 +343,10 @@ public class TrackingService extends Service {
 
     @SuppressLint("MissingPermission")
     private void startLocationUpdates() {
+        if (stepSensor != null) {
+            sensorManager.registerListener(this, stepSensor, SensorManager.SENSOR_DELAY_UI);
+        }
+
         LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
                 .setMinUpdateDistanceMeters(2f)
                 .build();
@@ -338,6 +357,7 @@ public class TrackingService extends Service {
 
     private void stopLocationUpdates() {
         fusedLocationClient.removeLocationUpdates(locationCallback);
+        sensorManager.unregisterListener(this);
     }
 
     private Notification createNotification() {
@@ -366,6 +386,24 @@ public class TrackingService extends Service {
                 manager.createNotificationChannel(serviceChannel);
             }
         }
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() == Sensor.TYPE_STEP_COUNTER) {
+            int totalSteps = (int) event.values[0];
+            if (startSteps < 0) {
+                startSteps = totalSteps;
+            }
+            currentSessionSteps = totalSteps - startSteps;
+            if (listener != null) {
+                listener.onStepsUpdate(currentSessionSteps);
+            }
+        }
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
     }
 
     @Nullable

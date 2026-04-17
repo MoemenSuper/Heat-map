@@ -94,6 +94,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private static final String TAG = "MapActivity";
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
+    private static final int ACTIVITY_RECOGNITION_PERMISSION_REQUEST_CODE = 2;
     private static final String CHANNEL_ID_LAND = "land_takeover_channel";
     private static final float DEFAULT_ZOOM = 16f;
     private static final float PLACE_SEARCH_ZOOM = 10.5f;
@@ -118,7 +119,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private boolean sessionRunning = false;
     private boolean followUserCamera = true;
 
-    private TextView chipMode;
+    private TextView chipSteps;
     private TextView chipDistance;
     private TextView chipArea;
     private MaterialButton sessionButton;
@@ -142,6 +143,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private long lastPolylineUiUpdateMs = 0L;
     private long lastCameraUiUpdateMs = 0L;
 
+    private int currentSessionSteps = 0;
     private TrackingService trackingService;
     private boolean isBound = false;
     private boolean sessionInvalidatedByAntiCheat = false;
@@ -163,6 +165,16 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 @Override
                 public void onLocationUpdate(Location location) {
                     consumeTrackingLocation(location);
+                }
+
+                @Override
+                public void onStepsUpdate(int steps) {
+                    currentSessionSteps = steps;
+                    runOnUiThread(() -> {
+                        if (chipSteps != null) {
+                            chipSteps.setText(String.valueOf(steps));
+                        }
+                    });
                 }
 
                 @Override
@@ -230,6 +242,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         setupPreviewControls();
         setupPlaceSearchControl();
+        
+        // Trigger permission checks early
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            checkActivityRecognitionPermission();
+        }
 
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
@@ -635,7 +652,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     private void setupPreviewControls() {
-        chipMode = findViewById(R.id.chip_mode);
+        chipSteps = findViewById(R.id.chip_steps);
         chipDistance = findViewById(R.id.chip_distance);
         chipArea = findViewById(R.id.chip_area);
         sessionButton = findViewById(R.id.session_button);
@@ -724,6 +741,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             mMap.setMyLocationEnabled(true);
             mMap.getUiSettings().setMyLocationButtonEnabled(false); // Disable default button
             centerMapOnCurrentLocation();
+            checkActivityRecognitionPermission();
         } else {
             ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
@@ -731,12 +749,34 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
     }
 
+    private void checkActivityRecognitionPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.ACTIVITY_RECOGNITION},
+                        ACTIVITY_RECOGNITION_PERMISSION_REQUEST_CODE);
+            }
+        }
+    }
+
     private void startTrackingSession() {
         if (mMap == null) return;
+        
+        // Check Location Permission
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST_CODE);
             return;
+        }
+
+        // Check Activity Recognition Permission for Step Counting (API 29+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACTIVITY_RECOGNITION}, ACTIVITY_RECOGNITION_PERMISSION_REQUEST_CODE);
+                return;
+            }
         }
 
         // Clear any leftover claimed area polygon from previous session
@@ -751,12 +791,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         antiCheatReason = null;
         trackedPath.clear();
         totalDistanceMeters = 0f;
+        currentSessionSteps = 0;
         lastAcceptedLocation = null;
         updateTrackingStats();
         activePathPolyline.setPoints(trackedPath);
 
         sessionButton.setText("STOP SESSION");
-        chipMode.setText("Tracking");
 
         Intent serviceIntent = new Intent(this, TrackingService.class);
         ContextCompat.startForegroundService(this, serviceIntent);
@@ -770,7 +810,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         stopService(serviceIntent);
 
         sessionButton.setText("START SESSION");
-        chipMode.setText("Preview");
 
         if (activePathPolyline != null) activePathPolyline.setPoints(new ArrayList<>());
 
@@ -792,26 +831,34 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         if (isPathClosed()) {
             // Calculate area without drawing a temporary polygon - Firebase will render the actual territory
             double area = SphericalUtil.computeArea(trackedPath);
-            if (area < 1000000.0) {
-                chipArea.setText(String.format(Locale.US, "%.0f m²", area));
-            } else {
-                chipArea.setText(String.format(Locale.US, "%.1f km²", area / 1000000.0));
-            }
             handleTerritoryClaim(area);
-            updateUserDistanceStat();
+            updateUserStats();
         } else {
             Toast.makeText(this, "Path not closed. Move closer to start.", Toast.LENGTH_LONG).show();
         }
+
+        // Reset tracking data and UI stats after session ends
+        trackedPath.clear();
+        totalDistanceMeters = 0f;
+        currentSessionSteps = 0;
+        lastAcceptedLocation = null;
+        updateTrackingStats();
     }
 
-    private void updateUserDistanceStat() {
-        mUserRef.child("totalDistanceWalked").get().addOnSuccessListener(snapshot -> {
-            double current = 0;
+    private void updateUserStats() {
+        mUserRef.get().addOnSuccessListener(snapshot -> {
+            double currentDist = 0;
+            long currentSteps = 0;
             if (snapshot.exists()) {
-                Double val = snapshot.getValue(Double.class);
-                if (val != null) current = val;
+                Double distVal = snapshot.child("totalDistanceWalked").getValue(Double.class);
+                Long stepVal = snapshot.child("totalSteps").getValue(Long.class);
+                if (distVal != null) currentDist = distVal;
+                if (stepVal != null) currentSteps = stepVal;
             }
-            mUserRef.child("totalDistanceWalked").setValue(current + totalDistanceMeters);
+            Map<String, Object> updates = new HashMap<>();
+            updates.put("totalDistanceWalked", currentDist + totalDistanceMeters);
+            updates.put("totalSteps", currentSteps + currentSessionSteps);
+            mUserRef.updateChildren(updates);
         });
     }
 
@@ -1065,7 +1112,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void updateTrackingStats() {
         chipDistance.setText(String.format(Locale.US, "%.2f km", totalDistanceMeters / 1000f));
-        chipArea.setText(String.format(Locale.US, "%d pts", trackedPath.size()));
+        chipArea.setText(String.format(Locale.US, "%.0f m²", SphericalUtil.computeArea(trackedPath)));
+        if (!sessionRunning) {
+            chipSteps.setText("0");
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -1107,6 +1157,16 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     @Override
     public void onRequestPermissionsResult(int rc, @NonNull String[] p, @NonNull int[] g) {
         super.onRequestPermissionsResult(rc, p, g);
-        if (rc == LOCATION_PERMISSION_REQUEST_CODE && g.length > 0 && g[0] == PackageManager.PERMISSION_GRANTED) enableMyLocation();
+        if (rc == LOCATION_PERMISSION_REQUEST_CODE) {
+            if (g.length > 0 && g[0] == PackageManager.PERMISSION_GRANTED) {
+                enableMyLocation();
+            }
+        } else if (rc == ACTIVITY_RECOGNITION_PERMISSION_REQUEST_CODE) {
+            if (g.length > 0 && g[0] == PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "Activity recognition permission granted", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Steps counting requires activity recognition permission", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 }

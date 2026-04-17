@@ -208,16 +208,16 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="TERRITORY"
+                    android:text="STEPS"
                     android:textColor="@color/text_secondary"
                     android:textSize="10sp"
                     android:textStyle="bold" />
                 <TextView
-                    android:id="@+id/chip_area"
+                    android:id="@+id/chip_steps"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0 pts"
-                    android:textColor="@color/white"
+                    android:text="0"
+                    android:textColor="@color/heat_orange"
                     android:textSize="18sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -236,17 +236,17 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="STATUS"
+                    android:text="TERRITORY"
                     android:textColor="@color/text_secondary"
                     android:textSize="10sp"
                     android:textStyle="bold" />
                 <TextView
-                    android:id="@+id/chip_mode"
+                    android:id="@+id/chip_area"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Preview"
-                    android:textColor="@color/heat_orange"
-                    android:textSize="16sp"
+                    android:text="0 m²"
+                    android:textColor="@color/white"
+                    android:textSize="18sp"
                     android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>
