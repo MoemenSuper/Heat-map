@@ -122,7 +122,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private TextView chipSteps;
     private TextView chipDistance;
     private TextView chipArea;
-    private TextView syncStatus;
     private MaterialButton sessionButton;
     private FrameLayout loadingOverlay;
     private AutoCompleteTextView placeSearchInput;
@@ -217,29 +216,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
     }
 
-    private MaterialCardView sessionResultsCard;
-    private TextView resultArea, resultDistance, resultSteps;
-    private MaterialButton closeResultsButton;
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_map);
-        
-        sessionResultsCard = findViewById(R.id.session_results_card);
-        resultArea = findViewById(R.id.result_area);
-        resultDistance = findViewById(R.id.result_distance);
-        resultSteps = findViewById(R.id.result_steps);
-        closeResultsButton = findViewById(R.id.close_results_button);
-        syncStatus = findViewById(R.id.sync_status);
-
-        setupSyncStatusWatcher();
-        
-        if (closeResultsButton != null) {
-            closeResultsButton.setOnClickListener(v -> {
-                sessionResultsCard.setVisibility(View.GONE);
-            });
-        }
         
         createLandTakeoverNotificationChannel();
         loadingOverlay = findViewById(R.id.loading_overlay);
@@ -823,7 +803,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         activePathPolyline.setPoints(trackedPath);
 
         sessionButton.setText("STOP SESSION");
-        sessionButton.setBackgroundResource(R.drawable.map_stop_button);
+        sessionButton.setBackgroundResource(R.drawable.map_primary_button);
 
         Intent serviceIntent = new Intent(this, TrackingService.class);
         ContextCompat.startForegroundService(this, serviceIntent);
@@ -867,9 +847,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         } else {
             Toast.makeText(this, "Path not closed. Move closer to start.", Toast.LENGTH_LONG).show();
         }
-
-        // Show Results Popup
-        showSessionResults(finalArea, totalDistanceMeters, currentSessionSteps);
 
         // Reset tracking data and UI stats after session ends
         trackedPath.clear();

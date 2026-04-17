@@ -3,20 +3,16 @@ package com.example.heat_map_java_test_ux;
 import android.animation.ValueAnimator;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
-import android.view.animation.DecelerateInterpolator;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
-import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -38,13 +34,8 @@ import com.google.maps.android.SphericalUtil;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
 
 public class LeaderboardActivity extends AppCompatActivity {
 
@@ -65,25 +56,6 @@ public class LeaderboardActivity extends AppCompatActivity {
             this.endMs = endMs;
             this.bucketCount = bucketCount;
         }
-    }
-
-    private static class BestSession {
-        double surface;
-        long timestamp;
-    }
-
-    private static class GhostSnapshot {
-        double recordSurface;
-        long recordWeekStartMs;
-        double currentWeekSurface;
-    }
-
-    private static class TerritoryProgressItem {
-        String zoneName;
-        int zoneColor;
-        double surfaceBefore;
-        double surfaceAfter;
-        double maxEver;
     }
 
     private LeaderboardAdapter adapter;
@@ -107,10 +79,7 @@ public class LeaderboardActivity extends AppCompatActivity {
     private View mesStatsScroll;
     private RecyclerView leaderboardRecycler;
     private MaterialButtonToggleGroup periodToggleGroup;
-    private MaterialButton periodThisMonthButton;
-    private MaterialButton periodLastMonthButton;
-    private MaterialButton periodThreeMonthsButton;
-    private MaterialButton periodAllTimeButton;
+    private MaterialButton periodThisMonthButton, periodLastMonthButton, periodThreeMonthsButton, periodAllTimeButton;
 
     private MaterialCardView kpiSurfaceCard;
     private TextView kpiSurfaceValue;
@@ -126,7 +95,6 @@ public class LeaderboardActivity extends AppCompatActivity {
 
     // Podium Views
     private View podiumContainer;
-    private View rank1Container, rank2Container, rank3Container;
     private TextView rank1Name, rank2Name, rank3Name;
 
     @Override
@@ -145,9 +113,6 @@ public class LeaderboardActivity extends AppCompatActivity {
 
         mesStatsScroll = findViewById(R.id.mes_stats_scroll);
         podiumContainer = findViewById(R.id.podium_container);
-        rank1Container = findViewById(R.id.rank1_container);
-        rank2Container = findViewById(R.id.rank2_container);
-        rank3Container = findViewById(R.id.rank3_container);
         rank1Name = findViewById(R.id.rank1_name);
         rank2Name = findViewById(R.id.rank2_name);
         rank3Name = findViewById(R.id.rank3_name);
@@ -173,14 +138,10 @@ public class LeaderboardActivity extends AppCompatActivity {
                 mesStatsScroll.setVisibility(View.GONE);
                 leaderboardRecycler.setVisibility(View.VISIBLE);
                 podiumContainer.setVisibility(View.VISIBLE);
-                animatePodium(); // Re-animate when switching back to rankings
-
                 sortAndDisplay();
             }
-            @Override
-            public void onTabUnselected(TabLayout.Tab tab) {}
-            @Override
-            public void onTabReselected(TabLayout.Tab tab) {}
+            @Override public void onTabUnselected(TabLayout.Tab tab) {}
+            @Override public void onTabReselected(TabLayout.Tab tab) {}
         });
 
         String dbUrl = "https://heatmap-48e81-default-rtdb.europe-west1.firebasedatabase.app/";
@@ -197,75 +158,6 @@ public class LeaderboardActivity extends AppCompatActivity {
         }
 
         fetchUsers();
-        animatePodium();
-    }
-
-    private void animatePodium() {
-        if (rank1Container == null || rank2Container == null || rank3Container == null) return;
-
-        // Set initial state
-        rank1Container.setTranslationY(200f);
-        rank1Container.setAlpha(0f);
-        rank2Container.setTranslationY(200f);
-        rank2Container.setAlpha(0f);
-        rank3Container.setTranslationY(200f);
-        rank3Container.setAlpha(0f);
-
-        // Animate Rank 2 first (left)
-        rank2Container.animate()
-                .translationY(0f)
-                .alpha(1f)
-                .setDuration(600)
-                .setStartDelay(100)
-                .setInterpolator(new DecelerateInterpolator())
-                .start();
-
-        // Animate Rank 3 (right)
-        rank3Container.animate()
-                .translationY(0f)
-                .alpha(1f)
-                .setDuration(600)
-                .setStartDelay(200)
-                .setInterpolator(new DecelerateInterpolator())
-                .start();
-
-        // Animate Rank 1 last (middle, hero)
-        rank1Container.animate()
-                .translationY(0f)
-                .alpha(1f)
-                .setDuration(700)
-                .setStartDelay(400)
-                .setInterpolator(new DecelerateInterpolator())
-                .withEndAction(this::checkIfUserCelebration)
-                .start();
-    }
-
-    private void checkIfUserCelebration() {
-        if (userList.isEmpty() || currentUserId == null) return;
-        
-        boolean isTop3 = false;
-        for (int i = 0; i < Math.min(3, userList.size()); i++) {
-            if (currentUserId.equals(userList.get(i).userId)) {
-                isTop3 = true;
-                break;
-            }
-        }
-
-        if (isTop3) {
-            // Celebrate with a scale pulse
-            podiumContainer.animate()
-                    .scaleX(1.1f)
-                    .scaleY(1.1f)
-                    .setDuration(400)
-                    .setInterpolator(new DecelerateInterpolator())
-                    .withEndAction(() -> {
-                        podiumContainer.animate()
-                                .scaleX(1.0f)
-                                .scaleY(1.0f)
-                                .setDuration(300)
-                                .start();
-                    }).start();
-        }
     }
 
     @Override
@@ -478,7 +370,6 @@ public class LeaderboardActivity extends AppCompatActivity {
             Collections.sort(userList, (u1, u2) -> Long.compare(u2.totalSteps, u1.totalSteps));
         }
 
-        // Update Podium
         if (userList.size() >= 1) rank1Name.setText(userList.get(0).username); else rank1Name.setText("---");
         if (userList.size() >= 2) rank2Name.setText(userList.get(1).username); else rank2Name.setText("---");
         if (userList.size() >= 3) rank3Name.setText(userList.get(2).username); else rank3Name.setText("---");
@@ -504,7 +395,6 @@ public class LeaderboardActivity extends AppCompatActivity {
             holder.rank.setText(String.valueOf(rankNum));
             holder.name.setText(user.username != null ? user.username : "Anonymous");
 
-            // Style top 3 items in the list
             if (rankNum == 1) {
                 holder.rankContainer.setCardBackgroundColor(Color.parseColor("#FFD700"));
                 holder.rank.setTextColor(Color.BLACK);
@@ -519,17 +409,12 @@ public class LeaderboardActivity extends AppCompatActivity {
                 holder.rank.setTextColor(Color.WHITE);
             }
 
-            // Highlight current user
             if (user.userId != null && user.userId.equals(currentUserId)) {
                 ((MaterialCardView)holder.itemView).setStrokeColor(Color.parseColor("#FF5A1F"));
                 ((MaterialCardView)holder.itemView).setStrokeWidth(4);
-                holder.itemView.setScaleX(1.02f);
-                holder.itemView.setScaleY(1.02f);
             } else {
                 ((MaterialCardView)holder.itemView).setStrokeColor(Color.parseColor("#1AFFFFFF"));
                 ((MaterialCardView)holder.itemView).setStrokeWidth(2);
-                holder.itemView.setScaleX(1.0f);
-                holder.itemView.setScaleY(1.0f);
             }
 
             if (selectedTabIndex == 0) {

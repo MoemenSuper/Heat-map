@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Heat_map_java_test_UX</string>
+    <string name="app_name">HeatMap</string>
     <string name="heat_map">Heat Map</string>
     <string name="claim_territory">Claim your territory</string>
     <string name="email">Email</string>
@@ -41,4 +41,8 @@
     <string name="mes_empty_action">Start Session</string>
     <string name="mes_stats_peak">Pic</string>
     <string name="mes_stats_no_data">No data yet</string>
+
+    <string name="heat_map_title">HEAT MAP</string>
+    <string name="no_account_prompt">Don\'t have an account?&#160;</string>
+    <string name="sign_up_caps">SIGN UP</string>
 </resources>

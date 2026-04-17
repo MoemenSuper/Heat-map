@@ -47,7 +47,7 @@ public class MainActivity extends AppCompatActivity {
         emailEditText = findViewById(R.id.email_edit_text);
         passwordEditText = findViewById(R.id.password_edit_text);
         MaterialButton signInButton = findViewById(R.id.sign_in_button);
-        MaterialButton signUpButtonLink = findViewById(R.id.sign_up_button_link);
+        TextView signUpButtonLink = findViewById(R.id.sign_up_button_link);
         TextView forgotPasswordText = findViewById(R.id.forgot_password_text);
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
