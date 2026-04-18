@@ -1,6 +1,7 @@
 package com.example.heat_map_java_test_ux;
 
 import android.animation.ValueAnimator;
+import android.content.res.ColorStateList;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -13,6 +14,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -75,6 +77,7 @@ public class LeaderboardActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private int selectedTabIndex = 0;
     private boolean isMesStatsTab = false;
+    private boolean pendingScrollToCurrentUser = true;
 
     private View mesStatsScroll;
     private RecyclerView leaderboardRecycler;
@@ -142,6 +145,7 @@ public class LeaderboardActivity extends AppCompatActivity {
                 leaderboardRecycler.setVisibility(View.VISIBLE);
                 podiumContainer.setVisibility(View.VISIBLE);
                 if (celebrationView != null) celebrationView.start();
+                pendingScrollToCurrentUser = true;
                 sortAndDisplay();
             }
             @Override public void onTabUnselected(TabLayout.Tab tab) {}
@@ -203,6 +207,11 @@ public class LeaderboardActivity extends AppCompatActivity {
         periodThreeMonthsButton = findViewById(R.id.period_three_months);
         periodAllTimeButton = findViewById(R.id.period_all_time);
 
+        periodThisMonthButton.setCheckable(true);
+        periodLastMonthButton.setCheckable(true);
+        periodThreeMonthsButton.setCheckable(true);
+        periodAllTimeButton.setCheckable(true);
+
         kpiSurfaceCard = findViewById(R.id.kpi_surface_card);
         kpiSurfaceValue = findViewById(R.id.kpi_surface_value);
         kpiSurfaceProgress = findViewById(R.id.kpi_surface_progress);
@@ -213,11 +222,33 @@ public class LeaderboardActivity extends AppCompatActivity {
         weeklyChartView = findViewById(R.id.mes_chart);
 
         periodToggleGroup.check(R.id.period_this_month);
+        updatePeriodToggleStyles(R.id.period_this_month);
         periodToggleGroup.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
             if (!isChecked) return;
             selectedStatsPeriod = periodFromButton(checkedId);
+            updatePeriodToggleStyles(checkedId);
             refreshMesStatsUi();
         });
+    }
+
+    private void updatePeriodToggleStyles(int checkedId) {
+        stylePeriodButton(periodThisMonthButton, checkedId == R.id.period_this_month);
+        stylePeriodButton(periodLastMonthButton, checkedId == R.id.period_last_month);
+        stylePeriodButton(periodThreeMonthsButton, checkedId == R.id.period_three_months);
+        stylePeriodButton(periodAllTimeButton, checkedId == R.id.period_all_time);
+    }
+
+    private void stylePeriodButton(MaterialButton button, boolean selected) {
+        int selectedStroke = ContextCompat.getColor(this, R.color.heat_start);
+        int unselectedStroke = ContextCompat.getColor(this, R.color.divider_color);
+        int selectedText = ContextCompat.getColor(this, R.color.white);
+        int unselectedText = ContextCompat.getColor(this, R.color.text_secondary);
+        int selectedBackground = Color.parseColor("#33FF5A1F");
+
+        button.setStrokeColor(ColorStateList.valueOf(selected ? selectedStroke : unselectedStroke));
+        button.setStrokeWidth(selected ? 3 : 2);
+        button.setTextColor(selected ? selectedText : unselectedText);
+        button.setBackgroundTintList(ColorStateList.valueOf(selected ? selectedBackground : Color.TRANSPARENT));
     }
 
     private void attachMesStatsListeners() {
@@ -395,6 +426,33 @@ public class LeaderboardActivity extends AppCompatActivity {
         if (userList.size() >= 3) rank3Name.setText(userList.get(2).username); else rank3Name.setText("---");
 
         adapter.notifyDataSetChanged();
+        scrollToCurrentUserRankIfNeeded();
+    }
+
+    private void scrollToCurrentUserRankIfNeeded() {
+        if (!pendingScrollToCurrentUser || currentUserId == null || isMesStatsTab) return;
+
+        int currentUserPosition = -1;
+        for (int i = 0; i < userList.size(); i++) {
+            User user = userList.get(i);
+            if (user.userId != null && user.userId.equals(currentUserId)) {
+                currentUserPosition = i;
+                break;
+            }
+        }
+
+        if (currentUserPosition < 0) return;
+
+        pendingScrollToCurrentUser = false;
+        int targetPosition = currentUserPosition;
+        leaderboardRecycler.post(() -> {
+            RecyclerView.LayoutManager layoutManager = leaderboardRecycler.getLayoutManager();
+            if (layoutManager instanceof LinearLayoutManager) {
+                ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(targetPosition, 24);
+            } else {
+                leaderboardRecycler.scrollToPosition(targetPosition);
+            }
+        });
     }
 
     class LeaderboardAdapter extends RecyclerView.Adapter<LeaderboardAdapter.ViewHolder> {
@@ -413,7 +471,9 @@ public class LeaderboardActivity extends AppCompatActivity {
             User user = users.get(position);
             int rankNum = position + 1;
             holder.rank.setText(String.valueOf(rankNum));
-            holder.name.setText(user.username != null ? user.username : "Anonymous");
+            String displayName = user.username != null ? user.username : "Anonymous";
+            boolean isCurrentUser = user.userId != null && user.userId.equals(currentUserId);
+            holder.name.setText(isCurrentUser ? "You • " + displayName : displayName);
 
             if (rankNum == 1) {
                 holder.rankContainer.setCardBackgroundColor(Color.parseColor("#FFD700"));
@@ -429,12 +489,17 @@ public class LeaderboardActivity extends AppCompatActivity {
                 holder.rank.setTextColor(Color.WHITE);
             }
 
-            if (user.userId != null && user.userId.equals(currentUserId)) {
-                ((MaterialCardView)holder.itemView).setStrokeColor(Color.parseColor("#FF5A1F"));
-                ((MaterialCardView)holder.itemView).setStrokeWidth(4);
+            MaterialCardView rowCard = (MaterialCardView) holder.itemView;
+            if (isCurrentUser) {
+                rowCard.setStrokeColor(Color.parseColor("#FF5A1F"));
+                rowCard.setStrokeWidth(4);
+                rowCard.setCardBackgroundColor(Color.parseColor("#2BFF5A1F"));
+                holder.name.setTextColor(Color.parseColor("#FFF3E8"));
             } else {
-                ((MaterialCardView)holder.itemView).setStrokeColor(Color.parseColor("#1AFFFFFF"));
-                ((MaterialCardView)holder.itemView).setStrokeWidth(2);
+                rowCard.setStrokeColor(Color.parseColor("#1AFFFFFF"));
+                rowCard.setStrokeWidth(2);
+                rowCard.setCardBackgroundColor(ContextCompat.getColor(LeaderboardActivity.this, R.color.surface_variant));
+                holder.name.setTextColor(ContextCompat.getColor(LeaderboardActivity.this, R.color.white));
             }
 
             if (selectedTabIndex == 0) {

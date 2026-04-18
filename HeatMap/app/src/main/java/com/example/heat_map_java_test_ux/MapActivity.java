@@ -34,6 +34,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -41,6 +42,9 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
@@ -66,6 +70,7 @@ import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -95,7 +100,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private static final int ACTIVITY_RECOGNITION_PERMISSION_REQUEST_CODE = 2;
     private static final String CHANNEL_ID_LAND = "land_takeover_channel";
     private static final float DEFAULT_ZOOM = 16f;
-    private static final float PLACE_SEARCH_ZOOM = 10.5f;
+    private static final float PLACE_SEARCH_ZOOM = 12.6f;
     private static final float MAX_LOCATION_ACCURACY_METERS = 35f;
     private static final double MIN_SIGNIFICANT_LAND_LOSS_M2 = 100.0; 
     private static final long TRACKING_POLYLINE_UPDATE_THROTTLE_MS = 550L;
@@ -213,7 +218,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        EdgeToEdge.enable(this);
         setContentView(R.layout.activity_map);
+
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.map_root), (v, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+            return insets;
+        });
         
         createLandTakeoverNotificationChannel();
         loadingOverlay = findViewById(R.id.loading_overlay);
@@ -576,19 +588,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void renderTerritories(DataSnapshot snapshot) {
         if (mMap == null) return;
-        
-        StringBuilder fingerprint = new StringBuilder();
-        int count = 0;
-        for (DataSnapshot ds : snapshot.getChildren()) {
-            Territory t = ds.getValue(Territory.class);
-            if (t != null && t.points != null && t.points.size() >= 3) {
-                fingerprint.append(t.userId).append(":").append(t.points.size()).append(",");
-                count++;
-            }
-        }
-        fingerprint.append(count).append("_").append(userColors.hashCode());
-        
-        String currentFingerprint = fingerprint.toString();
+
+        String currentFingerprint = buildTerritoryFingerprint(snapshot);
         if (currentFingerprint.equals(lastRenderedTerritoryFingerprint)) return;
         lastRenderedTerritoryFingerprint = currentFingerprint;
 
@@ -616,6 +617,55 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                     .fillColor(fill).zIndex(1f));
             remotePolygons.add(p);
         }
+    }
+
+    private String buildTerritoryFingerprint(DataSnapshot snapshot) {
+        StringBuilder fingerprint = new StringBuilder();
+
+        TreeMap<String, String> sortedColors = new TreeMap<>(userColors);
+        for (Map.Entry<String, String> entry : sortedColors.entrySet()) {
+            fingerprint.append("c:")
+                    .append(entry.getKey())
+                    .append('=')
+                    .append(entry.getValue())
+                    .append(';');
+        }
+
+        for (DataSnapshot ds : snapshot.getChildren()) {
+            String key = ds.getKey() == null ? "no-key" : ds.getKey();
+            Territory territory = ds.getValue(Territory.class);
+
+            fingerprint.append("t:")
+                    .append(key)
+                    .append('|');
+
+            if (territory == null) {
+                fingerprint.append("null;");
+                continue;
+            }
+
+            fingerprint.append(territory.userId == null ? "no-user" : territory.userId)
+                    .append('|')
+                    .append(territory.timestamp)
+                    .append('|')
+                    .append(Math.round(territory.area * 10d))
+                    .append('|');
+
+            if (territory.points == null) {
+                fingerprint.append("no-points;");
+                continue;
+            }
+
+            fingerprint.append(territory.points.size()).append('|');
+            for (Territory.MyLatLng point : territory.points) {
+                long lat = Math.round(point.latitude * 1_000_000d);
+                long lng = Math.round(point.longitude * 1_000_000d);
+                fingerprint.append(lat).append(',').append(lng).append(';');
+            }
+            fingerprint.append('|');
+        }
+
+        return fingerprint.toString();
     }
 
     @Override
@@ -889,13 +939,12 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
                 for (DataSnapshot snapshot : dataSnapshot.getChildren()) {
                     Territory other = snapshot.getValue(Territory.class);
-                    if (other == null || other.points == null || other.userId.equals(currentUser.getUid())) continue;
-                    captureTerritory(snapshot.getRef(), other, newPolyJts, currentUser);
+                    if (other == null || other.points == null) continue;
+                    captureTerritory(snapshot.getRef(), other, newPolyJts);
                 }
                 saveTerritoryToFirebase(sessionPath, area);
                 if (lastTerritoriesSnapshot != null) {
                     lastRenderedTerritoryFingerprint = ""; 
-                    renderTerritories(lastTerritoriesSnapshot);
                 }
             }
             @Override
@@ -903,7 +952,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         });
     }
 
-    private void captureTerritory(DatabaseReference ref, Territory victim, org.locationtech.jts.geom.Polygon capturerPolyJts, FirebaseUser capturer) {
+    private void captureTerritory(DatabaseReference ref, Territory victim, org.locationtech.jts.geom.Polygon capturerPolyJts) {
         List<LatLng> victimPoints = new ArrayList<>();
         for (Territory.MyLatLng p : victim.points) victimPoints.add(new LatLng(p.latitude, p.longitude));
         
@@ -922,7 +971,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 if (remaining.isEmpty() || remaining.getArea() < 1e-10) {
                     ref.removeValue();
                 } else {
-                    remainingArea = SphericalUtil.computeArea(geometryToLatLngList(remaining));
+                    remainingArea = computeGeometryAreaM2(remaining);
                     applyGeometryToFirebase(ref, victim, remaining);
                 }
                 
@@ -936,6 +985,25 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 Log.e(TAG, "Territory capture failed", e);
             }
         }
+    }
+
+    private double computeGeometryAreaM2(Geometry geometry) {
+        if (geometry == null || geometry.isEmpty()) return 0;
+
+        if (geometry instanceof org.locationtech.jts.geom.Polygon) {
+            List<LatLng> path = geometryToLatLngList(geometry);
+            return path.size() >= 3 ? SphericalUtil.computeArea(path) : 0;
+        }
+
+        if (geometry instanceof MultiPolygon || geometry instanceof GeometryCollection) {
+            double total = 0;
+            for (int i = 0; i < geometry.getNumGeometries(); i++) {
+                total += computeGeometryAreaM2(geometry.getGeometryN(i));
+            }
+            return total;
+        }
+
+        return 0;
     }
 
 

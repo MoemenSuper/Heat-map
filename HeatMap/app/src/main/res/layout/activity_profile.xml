@@ -22,10 +22,10 @@
             app:layout_scrollFlags="scroll|exitUntilCollapsed"
             app:toolbarId="@+id/toolbar">
 
-            <View
+            <com.example.heat_map_java_test_ux.AnimatedGradientHeaderView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:background="@drawable/header_gradient" />
+                android:id="@+id/profile_header_gradient" />
 
             <LinearLayout
                 android:id="@+id/username_container"
