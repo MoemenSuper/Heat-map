@@ -72,17 +72,22 @@ public class LeaderboardActivity extends AppCompatActivity {
 
     private FirebaseAuth auth;
     private String currentUserId;
+    private String currentUserEmail;
     private String currentUserColorHex = "#FF5A1F";
 
     private ProgressBar progressBar;
     private int selectedTabIndex = 0;
     private boolean isMesStatsTab = false;
-    private boolean pendingScrollToCurrentUser = true;
 
     private View mesStatsScroll;
     private RecyclerView leaderboardRecycler;
     private MaterialButtonToggleGroup periodToggleGroup;
     private MaterialButton periodThisMonthButton, periodLastMonthButton, periodThreeMonthsButton, periodAllTimeButton;
+    private MaterialCardView myRankCard;
+    private MaterialCardView myRankBadge;
+    private TextView myRankNumber;
+    private TextView myRankName;
+    private TextView myRankValue;
 
     private MaterialCardView kpiSurfaceCard;
     private TextView kpiSurfaceValue;
@@ -95,6 +100,8 @@ public class LeaderboardActivity extends AppCompatActivity {
 
     private final List<Territory> myTerritories = new ArrayList<>();
     private StatsPeriod selectedStatsPeriod = StatsPeriod.THIS_MONTH;
+    private int currentUserLeaderboardPosition = RecyclerView.NO_POSITION;
+    private boolean hasUserScrolledLeaderboard = false;
 
     // Podium Views
     private View podiumContainer;
@@ -114,8 +121,25 @@ public class LeaderboardActivity extends AppCompatActivity {
         leaderboardRecycler.setLayoutManager(new LinearLayoutManager(this));
         adapter = new LeaderboardAdapter(userList);
         leaderboardRecycler.setAdapter(adapter);
+        leaderboardRecycler.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                if (dy != 0) {
+                    hasUserScrolledLeaderboard = true;
+                }
+                updatePinnedMyRankCard();
+            }
+        });
 
         mesStatsScroll = findViewById(R.id.mes_stats_scroll);
+        myRankCard = findViewById(R.id.my_rank_card);
+        myRankBadge = findViewById(R.id.my_rank_badge);
+        myRankNumber = findViewById(R.id.my_rank_number);
+        myRankName = findViewById(R.id.my_rank_name);
+        myRankValue = findViewById(R.id.my_rank_value);
+        if (myRankCard != null) {
+            myRankCard.post(this::ensureMyRankCardOnTop);
+        }
         podiumContainer = findViewById(R.id.podium_container);
         rank1Name = findViewById(R.id.rank1_name);
         rank2Name = findViewById(R.id.rank2_name);
@@ -135,17 +159,19 @@ public class LeaderboardActivity extends AppCompatActivity {
                     leaderboardRecycler.setVisibility(View.GONE);
                     podiumContainer.setVisibility(View.GONE);
                     mesStatsScroll.setVisibility(View.VISIBLE);
+                    myRankCard.setVisibility(View.GONE);
                     if (celebrationView != null) celebrationView.stop();
                     refreshMesStatsUi();
                     return;
                 }
 
                 isMesStatsTab = false;
+                hasUserScrolledLeaderboard = false;
                 mesStatsScroll.setVisibility(View.GONE);
                 leaderboardRecycler.setVisibility(View.VISIBLE);
                 podiumContainer.setVisibility(View.VISIBLE);
                 if (celebrationView != null) celebrationView.start();
-                pendingScrollToCurrentUser = true;
+                ensureMyRankCardOnTop();
                 sortAndDisplay();
             }
             @Override public void onTabUnselected(TabLayout.Tab tab) {}
@@ -160,6 +186,7 @@ public class LeaderboardActivity extends AppCompatActivity {
         FirebaseUser currentUser = auth.getCurrentUser();
         if (currentUser != null) {
             currentUserId = currentUser.getUid();
+            currentUserEmail = currentUser.getEmail();
             currentUserRef = usersRef.child(currentUserId);
             myTerritoriesQuery = territoriesRef.orderByChild("userId").equalTo(currentUserId);
             attachMesStatsListeners();
@@ -291,7 +318,12 @@ public class LeaderboardActivity extends AppCompatActivity {
                 for (DataSnapshot data : snapshot.getChildren()) {
                     User user = data.getValue(User.class);
                     if (user != null) {
-                        if (user.userId == null || user.userId.trim().isEmpty()) user.userId = data.getKey();
+                        String dbKey = data.getKey();
+                        if ((user.userId == null || user.userId.trim().isEmpty())
+                                && dbKey != null && !dbKey.trim().isEmpty()) {
+                            // If userId is missing in the payload, fall back to node key.
+                            user.userId = dbKey;
+                        }
                         userList.add(user);
                     }
                 }
@@ -425,40 +457,118 @@ public class LeaderboardActivity extends AppCompatActivity {
         if (userList.size() >= 2) rank2Name.setText(userList.get(1).username); else rank2Name.setText("---");
         if (userList.size() >= 3) rank3Name.setText(userList.get(2).username); else rank3Name.setText("---");
 
+        currentUserLeaderboardPosition = findCurrentUserPosition();
+
         adapter.notifyDataSetChanged();
-        scrollToCurrentUserRankIfNeeded();
+        leaderboardRecycler.post(this::updatePinnedMyRankCard);
     }
 
-    private void scrollToCurrentUserRankIfNeeded() {
-        if (!pendingScrollToCurrentUser || currentUserId == null || isMesStatsTab) return;
-        if (leaderboardRecycler.getVisibility() != View.VISIBLE) return;
-
-        int currentUserPosition = -1;
-        for (int i = 0; i < userList.size(); i++) {
-            User user = userList.get(i);
-            if (user.userId != null && user.userId.equals(currentUserId)) {
-                currentUserPosition = i;
-                break;
-            }
-        }
-
-        if (currentUserPosition < 0) return;
-
-        if (!leaderboardRecycler.isLaidOut()) {
-            leaderboardRecycler.post(this::scrollToCurrentUserRankIfNeeded);
+    private void updatePinnedMyRankCard() {
+        if (myRankCard == null || currentUserId == null || isMesStatsTab || leaderboardRecycler.getVisibility() != View.VISIBLE) {
+            if (myRankCard != null) myRankCard.setVisibility(View.GONE);
             return;
         }
 
-        int targetPosition = currentUserPosition;
-        leaderboardRecycler.post(() -> {
-            RecyclerView.LayoutManager layoutManager = leaderboardRecycler.getLayoutManager();
-            if (layoutManager instanceof LinearLayoutManager) {
-                ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(targetPosition, 0);
-            } else {
-                leaderboardRecycler.scrollToPosition(targetPosition);
+        ensureMyRankCardOnTop();
+
+        int currentUserPosition = currentUserLeaderboardPosition;
+        if (currentUserPosition == RecyclerView.NO_POSITION || currentUserPosition >= userList.size()) {
+            currentUserPosition = findCurrentUserPosition();
+            currentUserLeaderboardPosition = currentUserPosition;
+        }
+
+        if (currentUserPosition < 0) {
+            myRankCard.setVisibility(View.GONE);
+            return;
+        }
+
+        User currentUser = userList.get(currentUserPosition);
+        int rankNum = currentUserPosition + 1;
+        myRankNumber.setText(String.valueOf(rankNum));
+        myRankName.setText("You • " + (currentUser.username != null ? currentUser.username : "Anonymous"));
+
+        if (selectedTabIndex == 0) {
+            myRankValue.setText(formatSurface(currentUser.totalAreaClaimed));
+        } else if (selectedTabIndex == 1) {
+            myRankValue.setText(String.format(Locale.US, "%.1f km", currentUser.totalDistanceWalked / 1000.0));
+        } else {
+            myRankValue.setText(String.format(Locale.US, "%,d steps", currentUser.totalSteps));
+        }
+
+        if (rankNum == 1) {
+            myRankBadge.setCardBackgroundColor(Color.parseColor("#FFD700"));
+            myRankNumber.setTextColor(Color.BLACK);
+        } else if (rankNum == 2) {
+            myRankBadge.setCardBackgroundColor(Color.parseColor("#C0C0C0"));
+            myRankNumber.setTextColor(Color.BLACK);
+        } else if (rankNum == 3) {
+            myRankBadge.setCardBackgroundColor(Color.parseColor("#CD7F32"));
+            myRankNumber.setTextColor(Color.BLACK);
+        } else {
+            myRankBadge.setCardBackgroundColor(Color.parseColor("#2A2A2A"));
+            myRankNumber.setTextColor(Color.WHITE);
+        }
+
+        boolean currentUserVisibleInList = isCurrentUserRowAttached(currentUserPosition);
+        boolean shouldShowPinned = !currentUserVisibleInList;
+        myRankCard.setVisibility(shouldShowPinned ? View.VISIBLE : View.GONE);
+    }
+
+    private int findCurrentUserPosition() {
+        if (currentUserId == null && currentUserEmail == null) return RecyclerView.NO_POSITION;
+
+        for (int i = 0; i < userList.size(); i++) {
+            User user = userList.get(i);
+            if (isCurrentUserRecord(user)) {
+                return i;
             }
-            pendingScrollToCurrentUser = false;
-        });
+        }
+        return RecyclerView.NO_POSITION;
+    }
+
+    private boolean isCurrentUserRowAttached(int position) {
+        if (position == RecyclerView.NO_POSITION) return false;
+        RecyclerView.ViewHolder holder = leaderboardRecycler.findViewHolderForAdapterPosition(position);
+        if (holder == null) return false;
+
+        int rowTop = holder.itemView.getTop();
+        int rowBottom = holder.itemView.getBottom();
+        int contentTop = leaderboardRecycler.getPaddingTop();
+        int contentBottom = leaderboardRecycler.getHeight() - leaderboardRecycler.getPaddingBottom();
+
+        int intersection = Math.min(rowBottom, contentBottom) - Math.max(rowTop, contentTop);
+        int rowHeight = Math.max(1, holder.itemView.getHeight());
+        float visibleFraction = Math.max(0f, intersection) / (float) rowHeight;
+
+        boolean visibleEnoughToHide;
+        if (intersection <= 0) {
+            visibleEnoughToHide = false;
+        } else if (!hasUserScrolledLeaderboard) {
+            // Initial render: avoid hiding when only a tiny sliver is visible by default.
+            visibleEnoughToHide = visibleFraction >= 0.85f;
+        } else {
+            // After user scroll interaction, hide as soon as any hint appears.
+            visibleEnoughToHide = true;
+        }
+
+        return visibleEnoughToHide;
+    }
+
+    private boolean isCurrentUserRecord(User user) {
+        if (user == null) return false;
+        if (currentUserId != null && user.userId != null && user.userId.equals(currentUserId)) {
+            return true;
+        }
+        return currentUserEmail != null
+                && user.email != null
+                && currentUserEmail.equalsIgnoreCase(user.email);
+    }
+
+    private void ensureMyRankCardOnTop() {
+        if (myRankCard == null) return;
+        myRankCard.bringToFront();
+        myRankCard.setTranslationZ(32f);
+        myRankCard.invalidate();
     }
 
     class LeaderboardAdapter extends RecyclerView.Adapter<LeaderboardAdapter.ViewHolder> {
@@ -478,7 +588,7 @@ public class LeaderboardActivity extends AppCompatActivity {
             int rankNum = position + 1;
             holder.rank.setText(String.valueOf(rankNum));
             String displayName = user.username != null ? user.username : "Anonymous";
-            boolean isCurrentUser = user.userId != null && user.userId.equals(currentUserId);
+            boolean isCurrentUser = isCurrentUserRecord(user);
             holder.name.setText(isCurrentUser ? "You • " + displayName : displayName);
 
             if (rankNum == 1) {

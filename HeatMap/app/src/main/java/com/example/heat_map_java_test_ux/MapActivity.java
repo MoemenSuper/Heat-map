@@ -613,7 +613,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             int fill = Color.argb(100, Color.red(color), Color.green(color), Color.blue(color));
 
             Polygon p = mMap.addPolygon(new PolygonOptions().addAll(pts)
-                    .strokeColor(color).strokeWidth(5f)
+                    .strokeColor(Color.TRANSPARENT)
+                    .strokeWidth(0f)
                     .fillColor(fill).zIndex(1f));
             remotePolygons.add(p);
         }
