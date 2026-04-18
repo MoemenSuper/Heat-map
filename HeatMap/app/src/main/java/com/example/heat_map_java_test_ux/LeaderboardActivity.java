@@ -431,6 +431,7 @@ public class LeaderboardActivity extends AppCompatActivity {
 
     private void scrollToCurrentUserRankIfNeeded() {
         if (!pendingScrollToCurrentUser || currentUserId == null || isMesStatsTab) return;
+        if (leaderboardRecycler.getVisibility() != View.VISIBLE) return;
 
         int currentUserPosition = -1;
         for (int i = 0; i < userList.size(); i++) {
@@ -443,15 +444,20 @@ public class LeaderboardActivity extends AppCompatActivity {
 
         if (currentUserPosition < 0) return;
 
-        pendingScrollToCurrentUser = false;
+        if (!leaderboardRecycler.isLaidOut()) {
+            leaderboardRecycler.post(this::scrollToCurrentUserRankIfNeeded);
+            return;
+        }
+
         int targetPosition = currentUserPosition;
         leaderboardRecycler.post(() -> {
             RecyclerView.LayoutManager layoutManager = leaderboardRecycler.getLayoutManager();
             if (layoutManager instanceof LinearLayoutManager) {
-                ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(targetPosition, 24);
+                ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(targetPosition, 0);
             } else {
                 leaderboardRecycler.scrollToPosition(targetPosition);
             }
+            pendingScrollToCurrentUser = false;
         });
     }
 
