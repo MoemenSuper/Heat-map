@@ -82,8 +82,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:padding="12dp"
-                android:src="@android:drawable/btn_star_big_on"
-                app:tint="@color/heat_yellow" />
+                android:src="@drawable/ic_trophy"
+                app:tint="@color/heat_orange" />
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
 
