@@ -8,11 +8,27 @@
     android:background="@color/dark_background"
     tools:context=".MapActivity">
 
+
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/map"
         android:name="com.google.android.gms.maps.SupportMapFragment"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Edge Glow Overlay for Run Effect -->
+    <com.example.heat_map_java_test_ux.RunEdgeGlowView
+        android:id="@+id/edge_glow_overlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clickable="false"
+        android:visibility="gone"
+        android:focusable="false"
+        android:importantForAccessibility="no"
+        android:elevation="20dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

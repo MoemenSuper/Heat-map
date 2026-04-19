@@ -130,6 +130,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private MaterialCardView placeSearchCard;
     private android.widget.ImageView searchIconTrigger;
 
+    private RunEdgeGlowView edgeGlowOverlay;
+
     private final List<LatLng> trackedPath = new ArrayList<>();
     private final List<PlaceSuggestion> placeSuggestions = new ArrayList<>();
     private Polyline activePathPolyline;
@@ -230,6 +232,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         createLandTakeoverNotificationChannel();
         loadingOverlay = findViewById(R.id.loading_overlay);
         loadingOverlay.setVisibility(View.VISIBLE);
+        edgeGlowOverlay = findViewById(R.id.edge_glow_overlay);
+        if (edgeGlowOverlay != null) edgeGlowOverlay.setVisibility(View.GONE);
 
         mAuth = FirebaseAuth.getInstance();
         FirebaseUser currentUser = mAuth.getCurrentUser();
@@ -804,13 +808,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void startTrackingSession() {
         if (mMap == null) return;
-        
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST_CODE);
             return;
         }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
                     != PackageManager.PERMISSION_GRANTED) {
@@ -818,12 +820,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 return;
             }
         }
-
         if (claimedAreaPolygon != null) {
             claimedAreaPolygon.remove();
             claimedAreaPolygon = null;
         }
-
         sessionRunning = true;
         followUserCamera = true;
         sessionInvalidatedByAntiCheat = false;
@@ -834,10 +834,9 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         lastAcceptedLocation = null;
         updateTrackingStats();
         activePathPolyline.setPoints(trackedPath);
-
         sessionButton.setText(getString(R.string.stop_run));
         sessionButton.setBackgroundResource(R.drawable.map_primary_button);
-
+        if (edgeGlowOverlay != null) edgeGlowOverlay.setVisibility(View.VISIBLE);
         Intent serviceIntent = new Intent(this, TrackingService.class);
         ContextCompat.startForegroundService(this, serviceIntent);
     }
@@ -845,34 +844,27 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private void stopTrackingSession() {
         sessionRunning = false;
         followUserCamera = true;
-        
+        if (edgeGlowOverlay != null) edgeGlowOverlay.setVisibility(View.GONE);
         Intent serviceIntent = new Intent(this, TrackingService.class);
         stopService(serviceIntent);
-
         sessionButton.setText(getString(R.string.start_run));
         sessionButton.setBackgroundResource(R.drawable.map_primary_button);
-
         if (activePathPolyline != null) activePathPolyline.setPoints(new ArrayList<>());
-
         if (sessionInvalidatedByAntiCheat) {
             trackedPath.clear();
             totalDistanceMeters = 0f;
             currentSessionSteps = 0;
             lastAcceptedLocation = null;
             updateTrackingStats();
-
             String reason = antiCheatReason == null ? "vehicle movement detected" : antiCheatReason;
             Toast.makeText(this, "Anti-Cheat: " + reason + " run canceled", Toast.LENGTH_LONG).show();
-
             sessionInvalidatedByAntiCheat = false;
             antiCheatReason = null;
             return;
         }
-
         float sessionDistKm = totalDistanceMeters / 1000f;
         int sessionSteps = currentSessionSteps;
         double sessionAreaKm2 = 0;
-
         if (isPathClosed()) {
             double finalAreaM2 = SphericalUtil.computeArea(trackedPath);
             sessionAreaKm2 = finalAreaM2 / 1000000.0;
@@ -880,10 +872,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         } else {
             Toast.makeText(this, "Path not closed. Move closer to start.", Toast.LENGTH_LONG).show();
         }
-
         updateUserStats();
         showSessionSummary(sessionDistKm, sessionSteps, sessionAreaKm2);
-
         trackedPath.clear();
         totalDistanceMeters = 0f;
         currentSessionSteps = 0;
@@ -1100,6 +1090,10 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         lastAcceptedLocation = location;
         LatLng point = new LatLng(location.getLatitude(), location.getLongitude());
         trackedPath.add(point);
+
+        if (edgeGlowOverlay != null && location.hasSpeed()) {
+            edgeGlowOverlay.setSpeedMetersPerSecond(location.getSpeed());
+        }
         
         runOnUiThread(() -> {
             long nowMs = SystemClock.uptimeMillis();
