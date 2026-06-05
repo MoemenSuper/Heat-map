@@ -4,6 +4,10 @@ HeatMap is an Android app built in Java for turning real-world movement into ter
 
 This project was created by three second-year computer science students as a course project.
 
+## Demo
+
+Check out the app in action: [Watch the Demo Video](Demo%20Heatmap.mp4)
+
 ## What the app does
 
 - Sign in and sign up with Firebase Authentication.
@@ -67,7 +71,6 @@ HeatMap/
       values/
         strings.xml, colors.xml, themes.xml
     src/main/AndroidManifest.xml
-  TERRITORY_OVERLAP_FIX_ANALYSIS.md
   build.gradle
   settings.gradle
 ```
@@ -133,7 +136,6 @@ The app stores data in Firebase Realtime Database using two main models:
 
 ## Notes
 
-- The project contains a dedicated analysis document for a territory overlap bug fix: `TERRITORY_OVERLAP_FIX_ANALYSIS.md`.
 - The app uses a foreground tracking service, so location tracking can continue reliably during a session.
 - If you fork or reuse the project, replace backend credentials and API keys with your own.
 
