@@ -6,7 +6,9 @@ This project was created by three second-year computer science students as a cou
 
 ## Demo
 
-Check out the app in action: [Watch the Demo Video](Demo%20Heatmap.mp4)
+Check out the app in action:
+
+<video src="Demo%20Heatmap.mp4" width="350" controls></video>
 
 ## What the app does
 
