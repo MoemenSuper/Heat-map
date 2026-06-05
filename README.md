@@ -8,7 +8,7 @@ This project was created by three second-year computer science students as a cou
 
 Check out the app in action:
 
-<video src="HeatMap/Demo%20Heatmap.mp4" width="350" controls></video>
+<video src="https://raw.githubusercontent.com/MoemenSuper/Heat-map/main/HeatMap/Demo%20Heatmap.mp4" width="350" controls></video>
 
 ## What the app does
 
