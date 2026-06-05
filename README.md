@@ -6,9 +6,7 @@ This project was created by three second-year computer science students as a cou
 
 ## Demo
 
-Check out the app in action:
-
-<video src="https://raw.githubusercontent.com/MoemenSuper/Heat-map/main/HeatMap/Demo%20Heatmap.mp4" width="350" controls></video>
+[Watch the app demo](./HeatMap/Demo%20Heatmap.mp4)
 
 ## What the app does
 
