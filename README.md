@@ -6,7 +6,11 @@ This project was created by three second-year computer science students as a cou
 
 ## Demo
 
-[Watch the app demo](./HeatMap/Demo%20Heatmap.mp4)
+
+
+https://github.com/user-attachments/assets/0accd864-75ad-4cad-8c21-f7777c7d012b
+
+
 
 ## What the app does
 
